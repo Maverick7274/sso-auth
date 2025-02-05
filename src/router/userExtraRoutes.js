@@ -1,3 +1,4 @@
+// src/router/userExtraRoutes.js
 import { Router } from "express";
 import {
 	verifyEmail,
@@ -6,25 +7,30 @@ import {
 	resetPassword,
 	sendTwoFactorOTP,
 	verifyTwoFactorOTP,
+	sendLoginOTP,
+	verifyLoginOTP,
 } from "../controllers/userExtraController.js";
+import { protect } from "../middlewares/authMiddleware.js";
 
 export default function userExtraRoutes(version) {
 	const router = Router();
 
-	// Email verification endpoints
+	// Use dynamic version in the paths
 	router.get(`/api/v${version}/auth/verify-email`, verifyEmail);
 	router.post(
 		`/api/v${version}/auth/resend-verification`,
 		resendVerificationEmail
 	);
-
-	// Password reset endpoints
 	router.post(`/api/v${version}/auth/forgot-password`, forgotPassword);
 	router.post(`/api/v${version}/auth/reset-password`, resetPassword);
+	router.post(`/api/v${version}/auth/send-twofactor-otp`, sendTwoFactorOTP);
+	router.post(
+		`/api/v${version}/auth/verify-twofactor-otp`,
+		verifyTwoFactorOTP
+	);
+	router.post(`/api/v${version}/auth/send-login-otp`, sendLoginOTP);
+	router.post(`/api/v${version}/auth/verify-login-otp`, verifyLoginOTP);
 
-	// Two-factor authentication endpoints
-	router.post(`/api/v${version}/auth/send-otp`, sendTwoFactorOTP);
-	router.post(`/api/v${version}/auth/verify-otp`, verifyTwoFactorOTP);
-
+	// (Add any protected endpoints here if needed)
 	return router;
 }

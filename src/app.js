@@ -15,25 +15,36 @@ const app = express();
 const CLIENT_PORT = process.env.CLIENT_PORT || 8000;
 const API_VERSION = process.env.VERSION || "1";
 
-// Secure the app with Helmet
 app.use(helmet());
-
-// Log incoming HTTP requests with Morgan
 app.use(morgan("combined"));
-
-// Parse JSON and URL-encoded data, and cookies
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+app.use(
+	cors({
+		origin: `http://localhost:${CLIENT_PORT}`,
+		optionsSuccessStatus: 200,
+	})
+);
 
-// Mount routes (with dynamic versioning)
+// Mount routers using the factory functions
 app.use(userRoutes(API_VERSION));
 app.use(adminRoutes(API_VERSION));
 app.use(userExtraRoutes(API_VERSION));
 
-// Health check route
 app.get("/", (req, res) => {
 	res.send("Welcome to the Authentication API");
+});
+
+// 404 Handler
+app.use((req, res, next) => {
+	res.status(404).json({ success: false, message: "Route not found" });
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+	console.error(err.stack);
+	res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
 export default app;

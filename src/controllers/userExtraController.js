@@ -9,22 +9,24 @@ import {
 	sendVerificationEmail,
 	sendResetPasswordEmail,
 	sendTwoFactorOTPEmail,
+	sendLoginOTPEmail, // Assume you have a separate email template for login OTP
 } from "../services/emailService.js";
 
 // Import loggers
 import logger from "../utils/logger.js"; // Winston logger
 import pinoLogger from "../utils/pinoLogger.js"; // Pino logger
 import bunyanLogger from "../utils/bunyanLogger.js"; // Bunyan logger
-import { authLogger } from "../utils/log4jsConfig.js"; // Log4js logger for authentication flows
+import { authLogger } from "../utils/log4jsConfig.js"; // Log4js logger for auth flows
 import signale from "../utils/signaleLogger.js"; // Signale for development logs
 import tracerLogger from "../utils/tracerLogger.js"; // Tracer for function call tracing
 
-// Helper to generate a random token
+// Helper to generate a random token (for email verification and password reset)
 const generateToken = () => crypto.randomBytes(20).toString("hex");
 
-// ============
-// Verify Email
-// ============
+// ----------------------------------------------------
+// EMAIL VERIFICATION
+// ----------------------------------------------------
+
 // GET /api/v1/auth/verify-email?token=XYZ
 export const verifyEmail = async (req, res) => {
 	try {
@@ -39,7 +41,6 @@ export const verifyEmail = async (req, res) => {
 			emailVerificationToken: token,
 			emailVerificationExpires: { $gt: Date.now() },
 		});
-
 		if (!user) {
 			authLogger.warn(`Invalid or expired token: ${token}`);
 			return sendResponse(
@@ -104,10 +105,10 @@ export const resendVerificationEmail = async (req, res) => {
 			);
 		}
 
-		// Generate new verification token (expires in 24 hours)
+		// Generate a new token (expires in 15 minutes)
 		const token = generateToken();
 		user.emailVerificationToken = token;
-		user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
+		user.emailVerificationExpires = Date.now() + 15 * 60 * 1000;
 		await user.save();
 
 		await sendVerificationEmail(user.email, token);
@@ -125,9 +126,9 @@ export const resendVerificationEmail = async (req, res) => {
 	}
 };
 
-// ======================
-// Forgot Password & Reset
-// ======================
+// ----------------------------------------------------
+// FORGOT PASSWORD & RESET PASSWORD
+// ----------------------------------------------------
 
 // POST /api/v1/auth/forgot-password
 export const forgotPassword = async (req, res) => {
@@ -137,7 +138,6 @@ export const forgotPassword = async (req, res) => {
 			authLogger.warn("Forgot password: Email missing.");
 			return sendResponse(res, 400, false, null, "Email is required");
 		}
-
 		const user = await User.findOne({ email });
 		if (!user) {
 			authLogger.warn(
@@ -145,8 +145,7 @@ export const forgotPassword = async (req, res) => {
 			);
 			return sendResponse(res, 400, false, null, "User not found");
 		}
-
-		// Generate reset token (expires in 1 hour)
+		// Generate a reset token (expires in 1 hour)
 		const token = generateToken();
 		user.forgotPasswordToken = token;
 		user.forgotPasswordExpires = Date.now() + 60 * 60 * 1000;
@@ -181,7 +180,6 @@ export const resetPassword = async (req, res) => {
 				"Token and new passwords are required"
 			);
 		}
-
 		if (data.newPassword !== data.confirmPassword) {
 			authLogger.warn("Reset password: Passwords do not match.");
 			return sendResponse(
@@ -210,7 +208,7 @@ export const resetPassword = async (req, res) => {
 			);
 		}
 
-		const salt = await bcrypt.genSalt(10);
+		const salt = await bcrypt.genSalt(12);
 		user.password = await bcrypt.hash(data.newPassword, salt);
 		user.forgotPasswordToken = undefined;
 		user.forgotPasswordExpires = undefined;
@@ -228,51 +226,54 @@ export const resetPassword = async (req, res) => {
 	}
 };
 
-// ===========================
-// Two-Factor Authentication (OTP)
-// ===========================
+// ----------------------------------------------------
+// TWO-FCTOR AUTHENTICATION (OTP) Endpoints
+// ----------------------------------------------------
 
-// POST /api/v1/auth/send-otp
+// POST /api/v1/auth/send-twofactor-otp
 export const sendTwoFactorOTP = async (req, res) => {
 	try {
 		const { email } = req.body;
 		if (!email) {
-			authLogger.warn("Send OTP: Email missing.");
+			authLogger.warn("Send 2FA OTP: Email missing.");
 			return sendResponse(res, 400, false, null, "Email is required");
 		}
-
 		const user = await User.findOne({ email });
 		if (!user) {
-			authLogger.warn(`Send OTP: User not found for email ${email}`);
+			authLogger.warn(`Send 2FA OTP: User not found for email ${email}`);
 			return sendResponse(res, 400, false, null, "User not found");
 		}
 
-		// Generate a 6-digit OTP that expires in 5 minutes
-		const otp = Math.floor(100000 + Math.random() * 900000).toString();
-		user.twoFactorOTP = otp;
-		user.twoFactorOTPExpires = Date.now() + 5 * 60 * 1000;
+		// Generate a 6-digit OTP
+		const plainOTP = Math.floor(100000 + Math.random() * 900000).toString();
+		// Hash the OTP before saving
+		const salt = await bcrypt.genSalt(10);
+		const hashedOTP = await bcrypt.hash(plainOTP, salt);
+
+		user.twoFactorOTP = hashedOTP;
+		user.twoFactorOTPExpires = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
 		await user.save();
 
-		await sendTwoFactorOTPEmail(user.email, otp);
+		await sendTwoFactorOTPEmail(user.email, plainOTP);
 
-		logger.info(`OTP sent for 2FA to user: ${user._id}`);
-		pinoLogger.info({ userId: user._id }, "Pino: OTP sent for 2FA");
-		signale.success(`OTP sent to ${user.email}`);
+		logger.info(`2FA OTP sent for user: ${user._id}`);
+		pinoLogger.info({ userId: user._id }, "Pino: 2FA OTP sent");
+		signale.success(`2FA OTP sent to ${user.email}`);
 		tracerLogger.trace(`sendTwoFactorOTP executed for user ${user._id}`);
 
-		return sendResponse(res, 200, true, null, "OTP sent to email");
+		return sendResponse(res, 200, true, null, "2FA OTP sent to email");
 	} catch (err) {
 		logger.error(`Error in sendTwoFactorOTP: ${err.message}`);
 		return sendResponse(res, 500, false, null, "Server error");
 	}
 };
 
-// POST /api/v1/auth/verify-otp
+// POST /api/v1/auth/verify-twofactor-otp
 export const verifyTwoFactorOTP = async (req, res) => {
 	try {
 		const { email, otp } = req.body;
 		if (!email || !otp) {
-			authLogger.warn("Verify OTP: Email or OTP missing.");
+			authLogger.warn("Verify 2FA OTP: Email or OTP missing.");
 			return sendResponse(
 				res,
 				400,
@@ -281,7 +282,6 @@ export const verifyTwoFactorOTP = async (req, res) => {
 				"Email and OTP are required"
 			);
 		}
-
 		const user = await User.findOne({ email });
 		if (
 			!user ||
@@ -289,7 +289,7 @@ export const verifyTwoFactorOTP = async (req, res) => {
 			user.twoFactorOTPExpires < Date.now()
 		) {
 			authLogger.warn(
-				`Verify OTP failed: OTP invalid or expired for ${email}`
+				`Verify 2FA OTP failed: OTP invalid or expired for ${email}`
 			);
 			return sendResponse(
 				res,
@@ -299,10 +299,11 @@ export const verifyTwoFactorOTP = async (req, res) => {
 				"OTP is invalid or expired"
 			);
 		}
-
-		if (user.twoFactorOTP !== otp) {
+		// Compare provided OTP with the stored hashed OTP
+		const isMatch = await bcrypt.compare(otp, user.twoFactorOTP);
+		if (!isMatch) {
 			authLogger.warn(
-				`Verify OTP failed: Provided OTP does not match for ${email}`
+				`Verify 2FA OTP failed: OTP does not match for ${email}`
 			);
 			return sendResponse(res, 400, false, null, "OTP does not match");
 		}
@@ -312,14 +313,166 @@ export const verifyTwoFactorOTP = async (req, res) => {
 		user.twoFactorOTPExpires = undefined;
 		await user.save();
 
-		logger.info(`OTP verified for user: ${user._id}`);
-		pinoLogger.info({ userId: user._id }, "Pino: OTP verified for 2FA");
-		signale.success(`OTP verified successfully for ${user.email}`);
+		logger.info(`2FA OTP verified for user: ${user._id}`);
+		pinoLogger.info({ userId: user._id }, "Pino: 2FA OTP verified");
+		signale.success(`2FA OTP verified successfully for ${user.email}`);
 		tracerLogger.trace(`verifyTwoFactorOTP executed for user ${user._id}`);
 
-		return sendResponse(res, 200, true, null, "OTP verified successfully");
+		return sendResponse(
+			res,
+			200,
+			true,
+			null,
+			"2FA OTP verified successfully"
+		);
 	} catch (err) {
 		logger.error(`Error in verifyTwoFactorOTP: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};
+
+// ----------------------------------------------------
+// PASSWORDLESS LOGIN WITH OTP Endpoints
+// ----------------------------------------------------
+
+// POST /api/v1/auth/send-login-otp
+export const sendLoginOTP = async (req, res) => {
+	try {
+		const { email } = req.body;
+		if (!email) {
+			authLogger.warn("Send login OTP: Email missing.");
+			return sendResponse(res, 400, false, null, "Email is required");
+		}
+		const user = await User.findOne({ email });
+		if (!user) {
+			authLogger.warn(
+				`Send login OTP: User not found for email ${email}`
+			);
+			return sendResponse(res, 400, false, null, "User not found");
+		}
+		if (!user.isVerified) {
+			authLogger.warn(`Send login OTP: User ${email} not verified.`);
+			return sendResponse(
+				res,
+				403,
+				false,
+				null,
+				"Please verify your email first"
+			);
+		}
+
+		// Generate a 6-digit OTP for login
+		const plainOTP = Math.floor(100000 + Math.random() * 900000).toString();
+		const salt = await bcrypt.genSalt(10);
+		const hashedOTP = await bcrypt.hash(plainOTP, salt);
+
+		user.loginOTP = hashedOTP; // Save in a separate field for login OTP
+		user.loginOTPExpires = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+		await user.save();
+
+		// Send login OTP email (use a separate template if desired)
+		await sendLoginOTPEmail(user.email, plainOTP);
+
+		logger.info(`Login OTP sent for user: ${user._id}`);
+		pinoLogger.info({ userId: user._id }, "Pino: Login OTP sent");
+		signale.success(`Login OTP sent to ${user.email}`);
+		tracerLogger.trace(`sendLoginOTP executed for user ${user._id}`);
+
+		return sendResponse(res, 200, true, null, "Login OTP sent to email");
+	} catch (err) {
+		logger.error(`Error in sendLoginOTP: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};
+
+// POST /api/v1/auth/verify-login-otp
+export const verifyLoginOTP = async (req, res) => {
+	try {
+		const { email, otp } = req.body;
+		if (!email || !otp) {
+			authLogger.warn("Verify login OTP: Email or OTP missing.");
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Email and OTP are required"
+			);
+		}
+		const user = await User.findOne({ email });
+		if (!user || !user.loginOTP || user.loginOTPExpires < Date.now()) {
+			authLogger.warn(
+				`Verify login OTP failed: OTP invalid or expired for ${email}`
+			);
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"OTP is invalid or expired"
+			);
+		}
+		const isMatch = await bcrypt.compare(otp, user.loginOTP);
+		if (!isMatch) {
+			authLogger.warn(
+				`Verify login OTP failed: OTP does not match for ${email}`
+			);
+			return sendResponse(res, 400, false, null, "OTP does not match");
+		}
+
+		// Clear login OTP after successful verification
+		user.loginOTP = undefined;
+		user.loginOTPExpires = undefined;
+		await user.save();
+
+		// Generate JWT token for passwordless login
+		const token = generateToken({
+			id: user._id,
+			email: user.email,
+			isAdmin: user.isAdmin,
+		});
+		const cookieOptions = {
+			httpOnly: true,
+			secure: process.env.NODE_ENV === "production",
+			sameSite: "strict",
+			maxAge: 60 * 60 * 1000,
+		};
+		res.cookie("token", token, cookieOptions);
+
+		// Create session record
+		await Session.create({
+			user: user._id,
+			userModel: "User",
+			...getSessionData(req, token),
+		});
+
+		logger.info(`Passwordless login successful for user: ${user._id}`);
+		pinoLogger.info(
+			{ userId: user._id },
+			"Pino: Passwordless login successful"
+		);
+		bunyanLogger.info(
+			{ userId: user._id },
+			"Passwordless login successful"
+		);
+		signale.success(`User ${user.email} logged in via OTP successfully.`);
+		tracerLogger.trace(`verifyLoginOTP executed for user ${user._id}`);
+
+		return sendResponse(
+			res,
+			200,
+			true,
+			_.pick(user, [
+				"_id",
+				"name",
+				"email",
+				"dateOfBirth",
+				"emergencyRecoveryContact",
+			]),
+			"Login successful via OTP"
+		);
+	} catch (err) {
+		logger.error(`Error in verifyLoginOTP: ${err.message}`);
 		return sendResponse(res, 500, false, null, "Server error");
 	}
 };

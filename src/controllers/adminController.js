@@ -1,5 +1,4 @@
 // src/controllers/adminController.js
-
 import bcrypt from "bcryptjs";
 import _ from "lodash";
 import { z } from "zod";
@@ -9,47 +8,28 @@ import { generateToken, verifyToken } from "../services/tokenServices.js";
 import { sendResponse, formatError } from "../utils/helpers.js";
 
 // Import loggers
-import logger from "../utils/logger.js"; // Winston logger
-import pinoLogger from "../utils/pinoLogger.js"; // Pino logger
-import bunyanLogger from "../utils/bunyanLogger.js"; // Bunyan logger
-import { authLogger } from "../utils/log4jsConfig.js"; // Log4js logger for authentication flows
-import signale from "../utils/signaleLogger.js"; // Signale for development logs
-import tracerLogger from "../utils/tracerLogger.js"; // Tracer for function call tracing
+import logger from "../utils/logger.js";
+import pinoLogger from "../utils/pinoLogger.js";
+import bunyanLogger from "../utils/bunyanLogger.js";
+import { authLogger } from "../utils/log4jsConfig.js";
+import signale from "../utils/signaleLogger.js";
+import tracerLogger from "../utils/tracerLogger.js";
 
-// ------------------------------
-// Zod Schemas for Admin Actions
-// ------------------------------
-
+// ----------------------------
+// Zod Schemas for Admin
+// ----------------------------
 const adminRegisterSchema = z.object({
 	name: z.string().min(1, { message: "Name is required" }),
 	email: z.string().email({ message: "Invalid email format" }),
 	password: z
 		.string()
 		.min(6, { message: "Password must be at least 6 characters long" }),
-	confirmPassword: z
-		.string()
-		.min(6, {
-			message: "Confirm password must be at least 6 characters long",
-		}),
+	confirmPassword: z.string().min(6, {
+		message: "Confirm password must be at least 6 characters long",
+	}),
 	adminKey: z.string().min(1, { message: "Admin key is required" }),
 	role: z.enum(["Admin", "Super Admin", "Moderator"]),
-	permissions: z.array(z.string()).optional(),
-	accessLevel: z.number().min(1).max(5).optional(),
-	dateOfBirth: z.string().optional(),
-	emergencyRecoveryContact: z.string().optional(),
-	// Optional boolean flags
-	canManageUsers: z.boolean().optional(),
-	canManageContent: z.boolean().optional(),
-	canManagePayments: z.boolean().optional(),
-	canViewReports: z.boolean().optional(),
-	canApproveNewAdmins: z.boolean().optional(),
-	canSuspendUsers: z.boolean().optional(),
-	canDeleteData: z.boolean().optional(),
-	canExportData: z.boolean().optional(),
-	superAdminKey: z.string().optional(),
-	canPromoteDemoteAdmins: z.boolean().optional(),
-	canModifyAdminPermissions: z.boolean().optional(),
-	canOverrideSecuritySettings: z.boolean().optional(),
+	// Other optional fields can be added as needed.
 });
 
 const adminLoginSchema = z.object({
@@ -57,7 +37,9 @@ const adminLoginSchema = z.object({
 	password: z.string().min(1, { message: "Password is required" }),
 });
 
-// Helper to extract session data
+// ----------------------------
+// Helper: Extract Session Data
+// ----------------------------
 const getSessionData = (req, token) => ({
 	ipAddress:
 		req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unknown",
@@ -66,28 +48,23 @@ const getSessionData = (req, token) => ({
 	token,
 });
 
-// ------------------------------
-// Admin Controller Functions
-// ------------------------------
+// ----------------------------
+// Controller Functions
+// ----------------------------
 
-// Register a new admin
+// Register new admin
 export const registerAdmin = async (req, res) => {
 	try {
-		const data = _.pick(req.body, [
+		const allowedFields = [
 			"name",
 			"email",
 			"password",
 			"confirmPassword",
 			"adminKey",
-			"role",
-			"permissions",
-			"accessLevel",
-			"dateOfBirth",
-			"emergencyRecoveryContact",
-		]);
+		];
+		const data = _.pick(req.body, allowedFields);
 		const parsedData = adminRegisterSchema.parse(data);
 
-		// Check if passwords match
 		if (parsedData.password !== parsedData.confirmPassword) {
 			authLogger.warn(
 				"Admin registration failed: Passwords do not match."
@@ -100,29 +77,15 @@ export const registerAdmin = async (req, res) => {
 				"Passwords do not match"
 			);
 		}
-		// Remove confirmPassword from parsed data
 		delete parsedData.confirmPassword;
 
-		// Validate admin key
+		// Validate admin key (for non-Super Admins) using env variables
 		if (
 			parsedData.role !== "Super Admin" &&
 			parsedData.adminKey !== process.env.ADMIN_KEY
 		) {
 			authLogger.warn(`Invalid admin key for ${parsedData.email}`);
 			return sendResponse(res, 401, false, null, "Invalid admin key");
-		}
-		if (
-			parsedData.role === "Super Admin" &&
-			parsedData.superAdminKey !== process.env.SUPER_ADMIN_KEY
-		) {
-			authLogger.warn(`Invalid super admin key for ${parsedData.email}`);
-			return sendResponse(
-				res,
-				401,
-				false,
-				null,
-				"Invalid super admin key"
-			);
 		}
 
 		// Check if admin exists
@@ -134,57 +97,34 @@ export const registerAdmin = async (req, res) => {
 			return sendResponse(res, 400, false, null, "Admin already exists");
 		}
 
-		// Hash the password
-		const salt = await bcrypt.genSalt(10);
+		// Hash password
+		const salt = await bcrypt.genSalt(12);
 		parsedData.password = await bcrypt.hash(parsedData.password, salt);
+
+		// Set new admins as unverified
+		parsedData.isVerified = false;
 
 		// Create admin
 		admin = await Admin.create(parsedData);
 
-		// Generate token and set cookie
-		const token = generateToken({
-			id: admin._id,
-			email: admin.email,
-			isAdmin: admin.isAdmin,
-		});
-		const cookieOptions = {
-			httpOnly: true,
-			secure: process.env.NODE_ENV === "production",
-			sameSite: "strict",
-			maxAge: 60 * 60 * 1000,
-		};
-		res.cookie("token", token, cookieOptions);
-
-		// Create a session record
-		await Session.create({
-			user: admin._id,
-			userModel: "Admin",
-			...getSessionData(req, token),
-		});
-
-		// Logging messages
+		// Log registration
 		logger.info(`Admin registered: ${admin._id}`);
 		pinoLogger.info({ adminId: admin._id }, "Pino: New admin registered");
 		bunyanLogger.info(
 			{ adminId: admin._id },
 			"Admin registration successful"
 		);
-		signale.success(`Admin ${admin.email} registered successfully.`);
+		signale.success(
+			`Admin ${admin.email} registered successfully. Email verification required.`
+		);
 		tracerLogger.trace(`registerAdmin executed for admin ${admin._id}`);
 
 		return sendResponse(
 			res,
 			201,
 			true,
-			_.pick(admin, [
-				"_id",
-				"name",
-				"email",
-				"role",
-				"accessLevel",
-				"permissions",
-			]),
-			"Admin registered successfully"
+			_.pick(admin, ["_id", "name", "email", "role"]),
+			"Admin registered successfully. Please verify your email to activate your account."
 		);
 	} catch (err) {
 		if (err instanceof z.ZodError) {
@@ -198,7 +138,7 @@ export const registerAdmin = async (req, res) => {
 	}
 };
 
-// Login admin
+// Login admin (requires email verification)
 export const loginAdmin = async (req, res) => {
 	try {
 		const credentials = _.pick(req.body, ["email", "password"]);
@@ -209,6 +149,18 @@ export const loginAdmin = async (req, res) => {
 				`Admin login failed: ${parsedCreds.email} not found.`
 			);
 			return sendResponse(res, 401, false, null, "Invalid credentials");
+		}
+		if (!admin.isVerified) {
+			authLogger.warn(
+				`Admin login failed: ${parsedCreds.email} not verified.`
+			);
+			return sendResponse(
+				res,
+				403,
+				false,
+				null,
+				"Please verify your email before logging in."
+			);
 		}
 		const isMatch = await bcrypt.compare(
 			parsedCreds.password,
@@ -250,14 +202,7 @@ export const loginAdmin = async (req, res) => {
 			res,
 			200,
 			true,
-			_.pick(admin, [
-				"_id",
-				"name",
-				"email",
-				"role",
-				"accessLevel",
-				"permissions",
-			]),
+			_.pick(admin, ["_id", "name", "email", "role"]),
 			"Login successful"
 		);
 	} catch (err) {
@@ -347,19 +292,10 @@ export const getAdminProfile = async (req, res) => {
 // Update admin profile
 export const updateAdminProfile = async (req, res) => {
 	try {
-		const allowedFields = [
-			"name",
-			"email",
-			"password",
-			"dateOfBirth",
-			"emergencyRecoveryContact",
-			"role",
-			"permissions",
-			"accessLevel",
-		];
+		const allowedFields = ["name", "email", "password"];
 		const updateData = _.pick(req.body, allowedFields);
 		if (updateData.password) {
-			const salt = await bcrypt.genSalt(10);
+			const salt = await bcrypt.genSalt(12);
 			updateData.password = await bcrypt.hash(updateData.password, salt);
 		}
 		const admin = await Admin.findByIdAndUpdate(req.user.id, updateData, {
@@ -374,14 +310,7 @@ export const updateAdminProfile = async (req, res) => {
 			res,
 			200,
 			true,
-			_.pick(admin, [
-				"_id",
-				"name",
-				"email",
-				"role",
-				"accessLevel",
-				"permissions",
-			]),
+			_.pick(admin, ["_id", "name", "email", "role"]),
 			"Admin profile updated successfully"
 		);
 	} catch (err) {

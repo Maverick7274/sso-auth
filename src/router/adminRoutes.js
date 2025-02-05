@@ -1,3 +1,4 @@
+// src/router/adminRoutes.js
 import { Router } from "express";
 import {
 	registerAdmin,
@@ -14,24 +15,17 @@ import { protect } from "../middlewares/authMiddleware.js";
 export default function adminRoutes(version) {
 	const router = Router();
 
-	// Authentication endpoints
+	// Public endpoints for admin
 	router.post(`/api/v${version}/admin/register`, registerAdmin);
 	router.post(`/api/v${version}/admin/login`, loginLimiter, loginAdmin);
 	router.get(`/api/v${version}/admin/validate-token`, validateAdminToken);
-	router.post(`/api/v${version}/admin/logout`, logoutAdmin);
 
-	// CRUD endpoints for admin profile
-	router.get(`/api/v${version}/admin/profile`, protect, getAdminProfile);
-	router.put(
-		`/api/v${version}/admin/update-profile`,
-		protect,
-		updateAdminProfile
-	);
-	router.delete(
-		`/api/v${version}/admin/delete-account`,
-		protect,
-		deleteAdminAccount
-	);
+	// Protected endpoints for admin account operations
+	router.use(protect);
+	router.post(`/api/v${version}/admin/logout`, logoutAdmin);
+	router.get(`/api/v${version}/admin/profile`, getAdminProfile);
+	router.put(`/api/v${version}/admin/update-profile`, updateAdminProfile);
+	router.delete(`/api/v${version}/admin/delete-account`, deleteAdminAccount);
 
 	return router;
 }
