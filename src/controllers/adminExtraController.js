@@ -396,3 +396,112 @@ export const disableTwoFactorAuth = async (req, res) => {
 		return sendResponse(res, 500, false, null, "Server error");
 	}
 };
+
+// ---------- New OIDC Endpoints ----------
+
+// OIDC Authorization Endpoint for Admins
+// GET /api/v{version}/oidc/admin/authorize?client_id=...&redirect_uri=...&response_type=code&state=...
+export const oidcAuthorizeAdmin = async (req, res) => {
+	try {
+		// Extract OIDC parameters from the query string
+		const { client_id, redirect_uri, response_type, state } = req.query;
+		if (!client_id || !redirect_uri || response_type !== "code") {
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Missing or invalid OIDC parameters"
+			);
+		}
+		// (Optional) Lookup and validate client_id against a Clients collection here
+		logger.info(
+			`OIDC authorize request from client: ${client_id} for admin: ${req.admin.id}`
+		);
+
+		// Generate an authorization code (in production, store this along with client_id and admin ID with expiry)
+		const authCode = generateToken();
+		logger.info(
+			`Generated OIDC authorization code: ${authCode} for admin: ${req.admin.id} and client: ${client_id}`
+		);
+
+		// Redirect to the client's redirect_uri with the code and state
+		const redirectUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
+		return res.redirect(redirectUrl);
+	} catch (err) {
+		logger.error(`Error in oidcAuthorizeAdmin: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};
+
+// OIDC Token Endpoint for Admins
+// POST /api/v{version}/oidc/admin/token
+export const oidcTokenAdmin = async (req, res) => {
+	try {
+		// Expect parameters: code, client_id, client_secret, redirect_uri, grant_type
+		const { code, client_id, client_secret, redirect_uri, grant_type } =
+			req.body;
+		if (
+			grant_type !== "authorization_code" ||
+			!code ||
+			!client_id ||
+			!client_secret ||
+			!redirect_uri
+		) {
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Missing or invalid token request parameters"
+			);
+		}
+		// (Optional) Validate the authorization code against your temporary store here.
+		// Also validate client_id and client_secret against your Clients store.
+		logger.info(
+			`OIDC token request from client: ${client_id} for admin with code: ${code}`
+		);
+
+		// Retrieve admin details from the stored authorization code record (for demo, we assume req.admin is available)
+		const adminId = req.admin ? req.admin.id : "dummyId";
+		const adminEmail = req.admin
+			? req.admin.email
+			: "dummy@dayadevraha.com";
+		// Include the client_id as a claim (audience) in the token
+		const token = generateAdminToken({
+			id: adminId,
+			email: adminEmail,
+			aud: client_id,
+		});
+
+		return res.json({
+			access_token: token,
+			token_type: "Bearer",
+			expires_in: 3600,
+		});
+	} catch (err) {
+		logger.error(`Error in oidcTokenAdmin: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};
+
+// OIDC UserInfo Endpoint for Admins
+// GET /api/v{version}/oidc/admin/userinfo
+export const oidcAdminUserInfo = async (req, res) => {
+	try {
+		// Assume adminProtect middleware has validated the access token and set req.admin
+		if (!req.admin) {
+			return res.status(401).json({ error: "Invalid token" });
+		}
+		return res.json({
+			id: req.admin.id,
+			email: req.admin.email,
+			name: req.admin.name,
+			role: req.admin.role,
+			// Include additional custom claims as needed
+		});
+	} catch (err) {
+		logger.error(`Error in oidcAdminUserInfo: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};

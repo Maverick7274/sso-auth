@@ -1,3 +1,5 @@
+// src/routes/adminExtraRoutes.js
+
 import { Router } from "express";
 import {
 	verifyEmail,
@@ -9,8 +11,11 @@ import {
 	getVerificationStatus,
 	enableTwoFactorAuth,
 	disableTwoFactorAuth,
+	oidcAuthorizeAdmin,
+	oidcTokenAdmin,
+	oidcAdminUserInfo,
 } from "../controllers/adminExtraController.js";
-import { adminProtect } from "../middlewares/authMiddleware.js"; // Ensure you import your adminProtect
+import { adminProtect } from "../middlewares/authMiddleware.js";
 
 export default function adminExtraRoutes(version) {
 	const router = Router();
@@ -37,7 +42,7 @@ export default function adminExtraRoutes(version) {
 	router.post(`/api/v${version}/admin/send-otp`, sendTwoFactorOTP);
 	router.post(`/api/v${version}/admin/verify-otp`, verifyTwoFactorOTP);
 
-	// New endpoints for enabling/disabling two-factor auth
+	// Endpoints to enable/disable two-factor auth
 	router.post(
 		`/api/v${version}/admin/enable-two-factor`,
 		adminProtect,
@@ -47,6 +52,23 @@ export default function adminExtraRoutes(version) {
 		`/api/v${version}/admin/disable-two-factor`,
 		adminProtect,
 		disableTwoFactorAuth
+	);
+
+	// ---------- New OIDC Endpoints ----------
+	router.get(
+		`/api/v${version}/oidc/admin/authorize`,
+		adminProtect,
+		oidcAuthorizeAdmin
+	);
+	router.post(
+		`/api/v${version}/oidc/admin/token`,
+		adminProtect,
+		oidcTokenAdmin
+	);
+	router.get(
+		`/api/v${version}/oidc/admin/userinfo`,
+		adminProtect,
+		oidcAdminUserInfo
 	);
 
 	return router;

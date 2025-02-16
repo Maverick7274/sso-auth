@@ -391,3 +391,118 @@ export const disableTwoFactorAuth = async (req, res) => {
 		return sendResponse(res, 500, false, null, "Server error");
 	}
 };
+
+// ---------- New OIDC Endpoints for Users ----------
+
+// OIDC Authorization Endpoint for Users
+// GET /api/v{version}/oidc/user/authorize?client_id=...&redirect_uri=...&response_type=code&state=...
+export const oidcAuthorizeUser = async (req, res) => {
+	try {
+		const { client_id, redirect_uri, response_type, state } = req.query;
+		if (!client_id || !redirect_uri || response_type !== "code") {
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Missing or invalid OIDC parameters"
+			);
+		}
+		// Ensure the user is authenticated (set by userProtect middleware)
+		if (!req.user) {
+			return sendResponse(
+				res,
+				401,
+				false,
+				null,
+				"User not authenticated"
+			);
+		}
+		// Log the client_id along with the authenticated user
+		logger.info(
+			`OIDC authorize request from client: ${client_id} for user: ${req.user.id}`
+		);
+
+		// Generate an authorization code (for demonstration, we use a token; in production, store this with expiration)
+		const authCode = generateToken();
+		logger.info(
+			`Generated OIDC auth code ${authCode} for user: ${req.user.id} and client: ${client_id}`
+		);
+
+		// Redirect back to the client with the code and state
+		const redirectUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
+		return res.redirect(redirectUrl);
+	} catch (err) {
+		logger.error(`Error in oidcAuthorizeUser: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};
+
+// OIDC Token Endpoint for Users
+// POST /api/v{version}/oidc/user/token
+export const oidcTokenUser = async (req, res) => {
+	try {
+		// Expect parameters: code, client_id, client_secret, redirect_uri, grant_type
+		const { code, client_id, client_secret, redirect_uri, grant_type } =
+			req.body;
+		if (
+			grant_type !== "authorization_code" ||
+			!code ||
+			!client_id ||
+			!client_secret ||
+			!redirect_uri
+		) {
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Missing or invalid token request parameters"
+			);
+		}
+		// (In production, validate the authorization code and the client credentials here)
+		logger.info(
+			`OIDC token request from client: ${client_id} for user with code: ${code}`
+		);
+
+		// For demonstration, assume we can retrieve the user from the stored authorization code.
+		// Here we use req.user if available; in a full implementation, you'd look up the code to get the user.
+		const userId = req.user ? req.user.id : "dummyId";
+		const userEmail = req.user ? req.user.email : "dummy@example.com";
+		// Generate token and include client_id as the audience claim
+		const token = generateUserToken({
+			id: userId,
+			email: userEmail,
+			aud: client_id,
+		});
+
+		return res.json({
+			access_token: token,
+			token_type: "Bearer",
+			expires_in: 3600,
+		});
+	} catch (err) {
+		logger.error(`Error in oidcTokenUser: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};
+
+// OIDC UserInfo Endpoint for Users
+// GET /api/v{version}/oidc/user/userinfo
+export const oidcUserUserInfo = async (req, res) => {
+	try {
+		// Assume userProtect middleware validated the access token and set req.user
+		if (!req.user) {
+			return res.status(401).json({ error: "Invalid token" });
+		}
+		return res.json({
+			id: req.user.id,
+			email: req.user.email,
+			name: req.user.name,
+			// Additional fields can be added here
+		});
+	} catch (err) {
+		logger.error(`Error in oidcUserUserInfo: ${err.message}`);
+		return sendResponse(res, 500, false, null, "Server error");
+	}
+};

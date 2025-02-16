@@ -1,3 +1,5 @@
+// src/routes/userExtraRoutes.js
+
 import { Router } from "express";
 import {
 	verifyEmail,
@@ -9,8 +11,11 @@ import {
 	getVerificationStatus,
 	enableTwoFactorAuth,
 	disableTwoFactorAuth,
+	oidcAuthorizeUser,
+	oidcTokenUser,
+	oidcUserUserInfo,
 } from "../controllers/userExtraController.js";
-import { userProtect } from "../middlewares/authMiddleware.js"; // Ensure you import userProtect
+import { userProtect } from "../middlewares/authMiddleware.js";
 
 export default function userExtraRoutes(version) {
 	const router = Router();
@@ -37,7 +42,7 @@ export default function userExtraRoutes(version) {
 	router.post(`/api/v${version}/user/send-otp`, sendTwoFactorOTP);
 	router.post(`/api/v${version}/user/verify-otp`, verifyTwoFactorOTP);
 
-	// New endpoints for enabling/disabling two-factor auth
+	// Endpoints to enable/disable two-factor auth
 	router.post(
 		`/api/v${version}/user/enable-two-factor`,
 		userProtect,
@@ -47,6 +52,19 @@ export default function userExtraRoutes(version) {
 		`/api/v${version}/user/disable-two-factor`,
 		userProtect,
 		disableTwoFactorAuth
+	);
+
+	// ---------- New OIDC Endpoints for Users ----------
+	router.get(
+		`/api/v${version}/oidc/user/authorize`,
+		userProtect,
+		oidcAuthorizeUser
+	);
+	router.post(`/api/v${version}/oidc/user/token`, userProtect, oidcTokenUser);
+	router.get(
+		`/api/v${version}/oidc/user/userinfo`,
+		userProtect,
+		oidcUserUserInfo
 	);
 
 	return router;
