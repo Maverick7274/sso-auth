@@ -20,56 +20,53 @@ import { adminProtect } from "../middlewares/authMiddleware.js";
 export default function adminExtraRoutes(version) {
 	const router = Router();
 
-	// Email verification endpoints
+	// GET /api/v{version}/admin/verify-email
+	// Triggers the verification process for an admin's email address.
 	router.get(`/api/v${version}/admin/verify-email`, verifyEmail);
-	router.post(
-		`/api/v${version}/admin/resend-verification`,
-		resendVerificationEmail
-	);
 
-	// Verification status endpoint
-	router.get(
-		`/api/v${version}/admin/verification-status`,
-		adminProtect,
-		getVerificationStatus
-	);
+	// POST /api/v{version}/admin/resend-verification
+	// Resends the email verification link to the admin.
+	router.post(`/api/v${version}/admin/resend-verification`, resendVerificationEmail);
 
-	// Password reset endpoints
+	// GET /api/v{version}/admin/verification-status
+	// Retrieves the current email verification status for the authenticated admin.
+	router.get(`/api/v${version}/admin/verification-status`, adminProtect, getVerificationStatus);
+
+	// POST /api/v{version}/admin/forgot-password
+	// Initiates the password reset process by sending a reset link to the admin.
 	router.post(`/api/v${version}/admin/forgot-password`, forgotPassword);
+
+	// POST /api/v{version}/admin/reset-password
+	// Resets the admin's password using the provided reset token and new password.
 	router.post(`/api/v${version}/admin/reset-password`, resetPassword);
 
-	// Two-factor authentication endpoints
+	// POST /api/v{version}/admin/send-otp
+	// Sends a One-Time Password (OTP) to the admin for two-factor authentication.
 	router.post(`/api/v${version}/admin/send-otp`, sendTwoFactorOTP);
+
+	// POST /api/v{version}/admin/verify-otp
+	// Verifies the OTP submitted by the admin to complete two-factor authentication.
 	router.post(`/api/v${version}/admin/verify-otp`, verifyTwoFactorOTP);
 
-	// Endpoints to enable/disable two-factor auth
-	router.post(
-		`/api/v${version}/admin/enable-two-factor`,
-		adminProtect,
-		enableTwoFactorAuth
-	);
-	router.post(
-		`/api/v${version}/admin/disable-two-factor`,
-		adminProtect,
-		disableTwoFactorAuth
-	);
+	// POST /api/v{version}/admin/enable-two-factor
+	// Enables two-factor authentication for the authenticated admin.
+	router.post(`/api/v${version}/admin/enable-two-factor`, adminProtect, enableTwoFactorAuth);
 
-	// ---------- New OIDC Endpoints ----------
-	router.get(
-		`/api/v${version}/oidc/admin/authorize`,
-		adminProtect,
-		oidcAuthorizeAdmin
-	);
-	router.post(
-		`/api/v${version}/oidc/admin/token`,
-		adminProtect,
-		oidcTokenAdmin
-	);
-	router.get(
-		`/api/v${version}/oidc/admin/userinfo`,
-		adminProtect,
-		oidcAdminUserInfo
-	);
+	// POST /api/v{version}/admin/disable-two-factor
+	// Disables two-factor authentication for the authenticated admin.
+	router.post(`/api/v${version}/admin/disable-two-factor`, adminProtect, disableTwoFactorAuth);
+
+	// GET /api/v{version}/oidc/admin/authorize
+	// Initiates the OIDC authorization flow for the authenticated admin.
+	router.get(`/api/v${version}/oidc/admin/authorize`, adminProtect, oidcAuthorizeAdmin);
+
+	// POST /api/v{version}/oidc/admin/token
+	// Exchanges the authorization code for an access token in the OIDC flow.
+	router.post(`/api/v${version}/oidc/admin/token`, adminProtect, oidcTokenAdmin);
+
+	// GET /api/v{version}/oidc/admin/userinfo
+	// Retrieves user information for the authenticated admin from the OIDC provider.
+	router.get(`/api/v${version}/oidc/admin/userinfo`, adminProtect, oidcAdminUserInfo);
 
 	return router;
 }

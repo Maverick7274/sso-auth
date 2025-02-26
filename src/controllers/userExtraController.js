@@ -10,17 +10,17 @@ import {
 	sendUserResetPasswordEmail,
 	sendUserTwoFactorOTPEmail,
 } from "../services/emailService.js";
+import { generateUserToken } from "../services/tokenServices.js";
+import logger from "../utils/logger.js"; // Using Winston for logging
+import Client from "../models/Client.js";
 
-// Use only the Winston logger
-import logger from "../utils/logger.js";
-
-// Helper to generate a random token
+// Helper: Generates a random hexadecimal token
 const generateToken = () => crypto.randomBytes(20).toString("hex");
 
-// ============
-// Verify Email
-// ============
-// GET /api/v1/auth/verify-email?token=XYZ
+/**
+ * GET /api/v1/auth/verify-email
+ * Verifies a user's email using the token from the query parameters.
+ */
 export const verifyEmail = async (req, res) => {
 	try {
 		const { token } = req.query;
@@ -29,7 +29,6 @@ export const verifyEmail = async (req, res) => {
 			return sendResponse(res, 400, false, null, "Token is required");
 		}
 
-		// Find the user with a matching, unexpired verification token
 		const user = await User.findOne({
 			emailVerificationToken: token,
 			emailVerificationExpires: { $gt: Date.now() },
@@ -65,7 +64,10 @@ export const verifyEmail = async (req, res) => {
 	}
 };
 
-// POST /api/v1/auth/resend-verification
+/**
+ * POST /api/v1/auth/resend-verification
+ * Resends the verification email to users who have not verified their email yet.
+ */
 export const resendVerificationEmail = async (req, res) => {
 	try {
 		const { email } = req.body;
@@ -82,9 +84,7 @@ export const resendVerificationEmail = async (req, res) => {
 			return sendResponse(res, 400, false, null, "User not found");
 		}
 		if (user.isVerified) {
-			logger.info(
-				`User ${email} already verified; no need to resend email.`
-			);
+			logger.info(`User ${email} already verified; no action needed.`);
 			return sendResponse(
 				res,
 				400,
@@ -94,7 +94,6 @@ export const resendVerificationEmail = async (req, res) => {
 			);
 		}
 
-		// Generate new verification token (expires in 24 hours)
 		const token = generateToken();
 		user.emailVerificationToken = token;
 		user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
@@ -110,11 +109,10 @@ export const resendVerificationEmail = async (req, res) => {
 	}
 };
 
-// ======================
-// Forgot Password & Reset
-// ======================
-
-// POST /api/v1/auth/forgot-password
+/**
+ * POST /api/v1/auth/forgot-password
+ * Generates a password reset token and sends a reset email to the user.
+ */
 export const forgotPassword = async (req, res) => {
 	try {
 		const { email } = req.body;
@@ -129,7 +127,6 @@ export const forgotPassword = async (req, res) => {
 			return sendResponse(res, 400, false, null, "User not found");
 		}
 
-		// Generate reset token (expires in 1 hour)
 		const token = generateToken();
 		user.forgotPasswordToken = token;
 		user.forgotPasswordExpires = Date.now() + 60 * 60 * 1000;
@@ -145,7 +142,10 @@ export const forgotPassword = async (req, res) => {
 	}
 };
 
-// POST /api/v1/auth/reset-password
+/**
+ * POST /api/v1/auth/reset-password
+ * Resets the user's password after validating the provided token and new password matches.
+ */
 export const resetPassword = async (req, res) => {
 	try {
 		const allowedFields = ["token", "newPassword", "confirmPassword"];
@@ -204,11 +204,10 @@ export const resetPassword = async (req, res) => {
 	}
 };
 
-// ===========================
-// Two-Factor Authentication (OTP)
-// ===========================
-
-// POST /api/v1/auth/send-otp
+/**
+ * POST /api/v1/auth/send-otp
+ * Sends a six-digit two-factor authentication OTP to the user's email.
+ */
 export const sendTwoFactorOTP = async (req, res) => {
 	try {
 		const { email } = req.body;
@@ -223,7 +222,6 @@ export const sendTwoFactorOTP = async (req, res) => {
 			return sendResponse(res, 400, false, null, "User not found");
 		}
 
-		// Generate a 6-digit OTP that expires in 5 minutes
 		const otp = Math.floor(100000 + Math.random() * 900000).toString();
 		user.twoFactorOTP = otp;
 		user.twoFactorOTPExpires = Date.now() + 5 * 60 * 1000;
@@ -239,7 +237,10 @@ export const sendTwoFactorOTP = async (req, res) => {
 	}
 };
 
-// POST /api/v1/auth/verify-otp
+/**
+ * POST /api/v1/auth/verify-otp
+ * Verifies the two-factor authentication OTP and issues a JWT token if valid.
+ */
 export const verifyTwoFactorOTP = async (req, res) => {
 	try {
 		const { email, otp } = req.body;
@@ -253,6 +254,7 @@ export const verifyTwoFactorOTP = async (req, res) => {
 				"Email and OTP are required"
 			);
 		}
+
 		const user = await User.findOne({ email });
 		if (
 			!user ||
@@ -276,18 +278,19 @@ export const verifyTwoFactorOTP = async (req, res) => {
 			);
 			return sendResponse(res, 400, false, null, "OTP does not match");
 		}
-		// Clear OTP after successful verification
+
+		// Clear the OTP
 		user.twoFactorOTP = undefined;
 		user.twoFactorOTPExpires = undefined;
 		await user.save();
 
-		// NEW: Generate JWT token and set it in cookies
+		// Generate JWT and set as cookie (expires in 1 hour)
 		const token = generateUserToken({ id: user._id, email: user.email });
 		const cookieOptions = {
 			httpOnly: true,
 			secure: process.env.NODE_ENV === "production",
 			sameSite: "strict",
-			maxAge: 60 * 60 * 1000, // 1 hour
+			maxAge: 60 * 60 * 1000,
 		};
 		res.cookie("user-token", token, cookieOptions);
 
@@ -305,13 +308,12 @@ export const verifyTwoFactorOTP = async (req, res) => {
 	}
 };
 
-// ------------------------------
-// Get Verification Status
-// ------------------------------
-// GET /api/v1/auth/verification-status
+/**
+ * GET /api/v1/auth/verification-status
+ * Retrieves the email verification status for the authenticated user.
+ */
 export const getVerificationStatus = async (req, res) => {
 	try {
-		// Assumes req.user is set by an authentication middleware
 		const user = await User.findById(req.user.id);
 		if (!user) {
 			logger.warn(
@@ -339,10 +341,12 @@ export const getVerificationStatus = async (req, res) => {
 	}
 };
 
-// Enable two-factor authentication for user
+/**
+ * POST /api/v1/auth/enable-2fa
+ * Enables two-factor authentication for the authenticated user.
+ */
 export const enableTwoFactorAuth = async (req, res) => {
 	try {
-		// Assume req.user is set by your user authentication middleware
 		const user = await User.findById(req.user.id);
 		if (!user) {
 			logger.warn(
@@ -366,7 +370,10 @@ export const enableTwoFactorAuth = async (req, res) => {
 	}
 };
 
-// Disable two-factor authentication for user
+/**
+ * POST /api/v1/auth/disable-2fa
+ * Disables two-factor authentication for the authenticated user.
+ */
 export const disableTwoFactorAuth = async (req, res) => {
 	try {
 		const user = await User.findById(req.user.id);
@@ -392,10 +399,10 @@ export const disableTwoFactorAuth = async (req, res) => {
 	}
 };
 
-// ---------- New OIDC Endpoints for Users ----------
-
-// OIDC Authorization Endpoint for Users
-// GET /api/v{version}/oidc/user/authorize?client_id=...&redirect_uri=...&response_type=code&state=...
+/**
+ * GET /api/v{version}/oidc/user/authorize
+ * OIDC Authorization endpoint that authenticates the user and issues an authorization code.
+ */
 export const oidcAuthorizeUser = async (req, res) => {
 	try {
 		const { client_id, redirect_uri, response_type, state } = req.query;
@@ -408,7 +415,19 @@ export const oidcAuthorizeUser = async (req, res) => {
 				"Missing or invalid OIDC parameters"
 			);
 		}
-		// Ensure the user is authenticated (set by userProtect middleware)
+		const client = await Client.findOne({ client_id, active: true });
+		if (!client) {
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Client not registered or inactive"
+			);
+		}
+		if (!client.redirect_uris.includes(redirect_uri)) {
+			return sendResponse(res, 400, false, null, "Invalid redirect URI");
+		}
 		if (!req.user) {
 			return sendResponse(
 				res,
@@ -418,18 +437,10 @@ export const oidcAuthorizeUser = async (req, res) => {
 				"User not authenticated"
 			);
 		}
-		// Log the client_id along with the authenticated user
 		logger.info(
 			`OIDC authorize request from client: ${client_id} for user: ${req.user.id}`
 		);
-
-		// Generate an authorization code (for demonstration, we use a token; in production, store this with expiration)
 		const authCode = generateToken();
-		logger.info(
-			`Generated OIDC auth code ${authCode} for user: ${req.user.id} and client: ${client_id}`
-		);
-
-		// Redirect back to the client with the code and state
 		const redirectUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
 		return res.redirect(redirectUrl);
 	} catch (err) {
@@ -438,11 +449,12 @@ export const oidcAuthorizeUser = async (req, res) => {
 	}
 };
 
-// OIDC Token Endpoint for Users
-// POST /api/v{version}/oidc/user/token
+/**
+ * POST /api/v{version}/oidc/user/token
+ * OIDC Token endpoint that exchanges an authorization code for an access token.
+ */
 export const oidcTokenUser = async (req, res) => {
 	try {
-		// Expect parameters: code, client_id, client_secret, redirect_uri, grant_type
 		const { code, client_id, client_secret, redirect_uri, grant_type } =
 			req.body;
 		if (
@@ -460,22 +472,13 @@ export const oidcTokenUser = async (req, res) => {
 				"Missing or invalid token request parameters"
 			);
 		}
-		// (In production, validate the authorization code and the client credentials here)
-		logger.info(
-			`OIDC token request from client: ${client_id} for user with code: ${code}`
-		);
-
-		// For demonstration, assume we can retrieve the user from the stored authorization code.
-		// Here we use req.user if available; in a full implementation, you'd look up the code to get the user.
 		const userId = req.user ? req.user.id : "dummyId";
 		const userEmail = req.user ? req.user.email : "dummy@example.com";
-		// Generate token and include client_id as the audience claim
-		const token = generateUserToken({
-			id: userId,
-			email: userEmail,
-			aud: client_id,
-		});
-
+		const token = jwt.sign(
+			{ id: userId, email: userEmail, aud: client_id },
+			process.env.USER_JWT_SECRET,
+			{ expiresIn: "1h" }
+		);
 		return res.json({
 			access_token: token,
 			token_type: "Bearer",
@@ -487,11 +490,12 @@ export const oidcTokenUser = async (req, res) => {
 	}
 };
 
-// OIDC UserInfo Endpoint for Users
-// GET /api/v{version}/oidc/user/userinfo
+/**
+ * GET /api/v{version}/oidc/user/userinfo
+ * OIDC UserInfo endpoint that returns information about the authenticated user.
+ */
 export const oidcUserUserInfo = async (req, res) => {
 	try {
-		// Assume userProtect middleware validated the access token and set req.user
 		if (!req.user) {
 			return res.status(401).json({ error: "Invalid token" });
 		}
@@ -499,7 +503,6 @@ export const oidcUserUserInfo = async (req, res) => {
 			id: req.user.id,
 			email: req.user.email,
 			name: req.user.name,
-			// Additional fields can be added here
 		});
 	} catch (err) {
 		logger.error(`Error in oidcUserUserInfo: ${err.message}`);

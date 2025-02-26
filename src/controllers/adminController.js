@@ -1,9 +1,17 @@
-// src/controllers/adminController.js
+// Admin Controller Methods
+// Routes:
+//   POST   /api/admin/register       - Register a new admin
+//   POST   /api/admin/login          - Log in an admin
+//   GET    /api/admin/validate-token - Validate admin authentication token
+//   POST   /api/admin/logout         - Log out admin
+//   GET    /api/admin/profile        - Retrieve verified admin profile
+//   PUT    /api/admin/profile        - Update verified admin profile
+//   DELETE /api/admin/profile        - Delete verified admin account
 
 import bcrypt from "bcryptjs";
 import _ from "lodash";
 import { z } from "zod";
-import crypto from "crypto"; // NEW: to generate verification token
+import crypto from "crypto";
 import Admin from "../models/Admin.js";
 import Session from "../models/Session.js";
 import {
@@ -14,15 +22,10 @@ import { sendResponse, formatError } from "../utils/helpers.js";
 import {
 	sendAdminVerificationEmail,
 	sendAdminTwoFactorOTPEmail,
-} from "../services/emailService.js"; // NEW: to send email
-
-// Use only one logger (Winston)
+} from "../services/emailService.js";
 import logger from "../utils/logger.js";
 
-// ------------------------------
-// Zod Schemas for Admin Actions
-// ------------------------------
-
+// Schema for validating admin registration data
 const adminRegisterSchema = z.object({
 	name: z.string().min(1, { message: "Name is required" }),
 	email: z
@@ -43,7 +46,7 @@ const adminRegisterSchema = z.object({
 	accessLevel: z.number().min(1).max(5).optional(),
 	dateOfBirth: z.string().optional(),
 	emergencyRecoveryContact: z.string().optional(),
-	// Optional boolean flags
+	// Optional boolean flags for admin privileges
 	canManageUsers: z.boolean().optional(),
 	canManageContent: z.boolean().optional(),
 	canManagePayments: z.boolean().optional(),
@@ -58,20 +61,24 @@ const adminRegisterSchema = z.object({
 	canOverrideSecuritySettings: z.boolean().optional(),
 });
 
-// Helper to extract session data
+// Helper: extract session details from request
 const getSessionData = (req, token) => ({
-	ipAddress:
-		req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unknown",
+	ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unknown",
 	location: "Unknown",
 	userAgent: req.headers["user-agent"] || "Unknown",
 	token,
 });
 
-// ------------------------------
-// Admin Controller Functions
-// ------------------------------
-
-// Register a new admin
+/*
+ * POST /api/admin/register
+ * Registers a new admin:
+ * - Validates input data using Zod.
+ * - Confirms password and admin/super admin keys.
+ * - Hashes the password.
+ * - Saves admin with unverified email.
+ * - Generates email verification token and sends verification email.
+ * - Returns a JWT token and session info via cookie.
+ */
 export const registerAdmin = async (req, res) => {
 	try {
 		const data = _.pick(req.body, [
@@ -88,20 +95,14 @@ export const registerAdmin = async (req, res) => {
 		]);
 		const parsedData = adminRegisterSchema.parse(data);
 
-		// Check if passwords match
+		// Ensure passwords match
 		if (parsedData.password !== parsedData.confirmPassword) {
 			logger.warn("Admin registration failed: Passwords do not match.");
-			return sendResponse(
-				res,
-				400,
-				false,
-				null,
-				"Passwords do not match"
-			);
+			return sendResponse(res, 400, false, null, "Passwords do not match");
 		}
 		delete parsedData.confirmPassword;
 
-		// Validate admin key
+		// Validate admin key for non-super admin roles
 		if (
 			parsedData.role !== "Super Admin" &&
 			parsedData.adminKey !== process.env.ADMIN_KEY
@@ -109,43 +110,37 @@ export const registerAdmin = async (req, res) => {
 			logger.warn(`Invalid admin key for ${parsedData.email}`);
 			return sendResponse(res, 401, false, null, "Invalid admin key");
 		}
+		// Validate super admin key for Super Admin role
 		if (
 			parsedData.role === "Super Admin" &&
 			parsedData.superAdminKey !== process.env.SUPER_ADMIN_KEY
 		) {
 			logger.warn(`Invalid super admin key for ${parsedData.email}`);
-			return sendResponse(
-				res,
-				401,
-				false,
-				null,
-				"Invalid super admin key"
-			);
+			return sendResponse(res, 401, false, null, "Invalid super admin key");
 		}
 
-		// Check if admin exists
+		// Check for existing admin by email
 		let admin = await Admin.findOne({ email: parsedData.email });
 		if (admin) {
 			logger.warn(`Admin with email ${parsedData.email} already exists.`);
 			return sendResponse(res, 400, false, null, "Admin already exists");
 		}
 
-		// Hash the password
+		// Hash password using bcryptjs
 		const salt = await bcrypt.genSalt(10);
 		parsedData.password = await bcrypt.hash(parsedData.password, salt);
 
-		// Create admin (email remains unverified by default)
+		// Create admin record (email is unverified by default)
 		admin = await Admin.create(parsedData);
 
-		// --- NEW: Generate verification token, update admin, and send verification email ---
+		// Generate email verification token valid for 24 hours
 		const verificationToken = crypto.randomBytes(20).toString("hex");
 		admin.emailVerificationToken = verificationToken;
-		admin.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours expiry
+		admin.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
 		await admin.save();
 		await sendAdminVerificationEmail(admin.email, verificationToken);
-		// -----------------------------------------------------------------------------
 
-		// Generate JWT token for login
+		// Generate JWT token for authentication
 		const token = generateAdminToken({
 			id: admin._id,
 			email: admin.email,
@@ -158,7 +153,7 @@ export const registerAdmin = async (req, res) => {
 		};
 		res.cookie("admin-token", token, cookieOptions);
 
-		// Create a session record
+		// Create session record
 		await Session.create({
 			user: admin._id,
 			userModel: "Admin",
@@ -171,14 +166,7 @@ export const registerAdmin = async (req, res) => {
 			res,
 			201,
 			true,
-			_.pick(admin, [
-				"_id",
-				"name",
-				"email",
-				"role",
-				"accessLevel",
-				"permissions",
-			]),
+			_.pick(admin, ["_id", "name", "email", "role", "accessLevel", "permissions"]),
 			"Admin registered successfully. Please verify your email."
 		);
 	} catch (err) {
@@ -193,16 +181,21 @@ export const registerAdmin = async (req, res) => {
 	}
 };
 
-// Login admin
+/*
+ * POST /api/admin/login
+ * Logs in an admin:
+ * - Validates email and password.
+ * - Compares password hash.
+ * - If two-factor authentication is enabled, sends an OTP and defers login.
+ * - Otherwise, generates JWT token and records session.
+ */
 export const loginAdmin = async (req, res) => {
 	try {
 		const credentials = _.pick(req.body, ["email", "password"]);
 		const parsedCreds = z
 			.object({
 				email: z.string().email({ message: "Invalid email format" }),
-				password: z
-					.string()
-					.min(1, { message: "Password is required" }),
+				password: z.string().min(1, { message: "Password is required" }),
 			})
 			.parse(credentials);
 		const admin = await Admin.findOne({ email: parsedCreds.email });
@@ -210,10 +203,7 @@ export const loginAdmin = async (req, res) => {
 			logger.warn(`Admin login failed: ${parsedCreds.email} not found.`);
 			return sendResponse(res, 401, false, null, "Invalid credentials");
 		}
-		const isMatch = await bcrypt.compare(
-			parsedCreds.password,
-			admin.password
-		);
+		const isMatch = await bcrypt.compare(parsedCreds.password, admin.password);
 		if (!isMatch) {
 			logger.warn(
 				`Admin login failed: Incorrect password for ${parsedCreds.email}`
@@ -221,7 +211,7 @@ export const loginAdmin = async (req, res) => {
 			return sendResponse(res, 401, false, null, "Invalid credentials");
 		}
 
-		// If admin has enabled two-factor auth, send OTP and do not complete login.
+		// Two-factor authentication handling
 		if (admin.twoFactorEnabled) {
 			const otp = Math.floor(100000 + Math.random() * 900000).toString();
 			admin.twoFactorOTP = otp;
@@ -238,7 +228,7 @@ export const loginAdmin = async (req, res) => {
 			);
 		}
 
-		// If 2FA is not enabled, complete login.
+		// Complete login if 2FA is not enabled
 		const token = generateAdminToken({ id: admin._id, email: admin.email });
 		const cookieOptions = {
 			httpOnly: true,
@@ -259,14 +249,7 @@ export const loginAdmin = async (req, res) => {
 			res,
 			200,
 			true,
-			_.pick(admin, [
-				"_id",
-				"name",
-				"email",
-				"role",
-				"accessLevel",
-				"permissions",
-			]),
+			_.pick(admin, ["_id", "name", "email", "role", "accessLevel", "permissions"]),
 			"Login successful"
 		);
 	} catch (err) {
@@ -281,7 +264,10 @@ export const loginAdmin = async (req, res) => {
 	}
 };
 
-// Validate admin token
+/*
+ * GET /api/admin/validate-token
+ * Validates the provided admin JWT token from cookies or Authorization header.
+ */
 export const validateAdminToken = async (req, res) => {
 	try {
 		let token;
@@ -311,13 +297,14 @@ export const validateAdminToken = async (req, res) => {
 	}
 };
 
-// Logout admin
+/*
+ * POST /api/admin/logout
+ * Logs out the admin by clearing the authentication cookie.
+ */
 export const logoutAdmin = async (req, res) => {
 	try {
 		res.clearCookie("admin-token");
-		logger.info(
-			`Admin logged out: ${req.admin ? req.admin.id : "unknown admin"}`
-		);
+		logger.info(`Admin logged out: ${req.admin ? req.admin.id : "unknown admin"}`);
 		return sendResponse(res, 200, true, null, "Logged out successfully");
 	} catch (err) {
 		logger.error(`Error in logoutAdmin: ${err.message}`);
@@ -325,14 +312,15 @@ export const logoutAdmin = async (req, res) => {
 	}
 };
 
-// Retrieve admin profile (requires verified email)
+/*
+ * GET /api/admin/profile
+ * Retrieves the profile of a verified admin.
+ */
 export const getAdminProfile = async (req, res) => {
 	try {
 		const admin = await Admin.findById(req.admin.id).select("-password");
 		if (!admin) {
-			logger.warn(
-				`Admin not found for profile retrieval: ${req.admin.id}`
-			);
+			logger.warn(`Admin not found for profile retrieval: ${req.admin.id}`);
 			return sendResponse(res, 404, false, null, "Admin not found");
 		}
 		if (!admin.isVerified) {
@@ -352,7 +340,11 @@ export const getAdminProfile = async (req, res) => {
 	}
 };
 
-// Update admin profile (requires verified email)
+/*
+ * PUT /api/admin/profile
+ * Updates the profile details of a verified admin.
+ * If password is provided, it is hashed before update.
+ */
 export const updateAdminProfile = async (req, res) => {
 	try {
 		const existingAdmin = await Admin.findById(req.admin.id);
@@ -397,14 +389,7 @@ export const updateAdminProfile = async (req, res) => {
 			res,
 			200,
 			true,
-			_.pick(admin, [
-				"_id",
-				"name",
-				"email",
-				"role",
-				"accessLevel",
-				"permissions",
-			]),
+			_.pick(admin, ["_id", "name", "email", "role", "accessLevel", "permissions"]),
 			"Admin profile updated successfully"
 		);
 	} catch (err) {
@@ -413,7 +398,10 @@ export const updateAdminProfile = async (req, res) => {
 	}
 };
 
-// Delete admin account (requires verified email)
+/*
+ * DELETE /api/admin/profile
+ * Deletes the account of a verified admin.
+ */
 export const deleteAdminAccount = async (req, res) => {
 	try {
 		const existingAdmin = await Admin.findById(req.admin.id);
@@ -432,13 +420,7 @@ export const deleteAdminAccount = async (req, res) => {
 		}
 		await Admin.findByIdAndDelete(req.admin.id);
 		logger.info(`Admin account deleted: ${req.admin.id}`);
-		return sendResponse(
-			res,
-			200,
-			true,
-			null,
-			"Admin account deleted successfully"
-		);
+		return sendResponse(res, 200, true, null, "Admin account deleted successfully");
 	} catch (err) {
 		logger.error(`Error in deleteAdminAccount: ${err.message}`);
 		return sendResponse(res, 500, false, null, "Server error");

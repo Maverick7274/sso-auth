@@ -1,5 +1,3 @@
-// src/controllers/adminExtraController.js
-
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import _ from "lodash";
@@ -11,17 +9,16 @@ import {
 	sendAdminTwoFactorOTPEmail,
 } from "../services/emailService.js";
 import { generateAdminToken } from "../services/tokenServices.js";
-
-// Use only the Winston logger
 import logger from "../utils/logger.js";
+import Client from "../models/Client.js";
 
-// Helper to generate a random token
+// Generates a random token string
 const generateToken = () => crypto.randomBytes(20).toString("hex");
 
-// ============
-// Verify Email
-// ============
-// GET /api/v{version}/admin/verify-email?token=XYZ
+/**
+ * GET /api/v{version}/admin/verify-email?token=XYZ
+ * Verifies the admin's email using the provided token.
+ */
 export const verifyEmail = async (req, res) => {
 	try {
 		const { token } = req.query;
@@ -30,7 +27,6 @@ export const verifyEmail = async (req, res) => {
 			return sendResponse(res, 400, false, null, "Token is required");
 		}
 
-		// Find the admin with a matching, unexpired verification token
 		const admin = await Admin.findOne({
 			emailVerificationToken: token,
 			emailVerificationExpires: { $gt: Date.now() },
@@ -66,7 +62,10 @@ export const verifyEmail = async (req, res) => {
 	}
 };
 
-// POST /api/v{version}/admin/resend-verification
+/**
+ * POST /api/v{version}/admin/resend-verification
+ * Resends the email verification link to an unverified admin.
+ */
 export const resendVerificationEmail = async (req, res) => {
 	try {
 		const { email } = req.body;
@@ -77,15 +76,11 @@ export const resendVerificationEmail = async (req, res) => {
 
 		const admin = await Admin.findOne({ email });
 		if (!admin) {
-			logger.warn(
-				`Resend verification failed: Admin not found (${email})`
-			);
+			logger.warn(`Admin not found (${email})`);
 			return sendResponse(res, 400, false, null, "Admin not found");
 		}
 		if (admin.isVerified) {
-			logger.info(
-				`Admin ${email} already verified; no need to resend email.`
-			);
+			logger.info(`Admin ${email} already verified.`);
 			return sendResponse(
 				res,
 				400,
@@ -95,14 +90,12 @@ export const resendVerificationEmail = async (req, res) => {
 			);
 		}
 
-		// Generate new verification token (expires in 24 hours)
 		const token = generateToken();
 		admin.emailVerificationToken = token;
 		admin.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
 		await admin.save();
 
 		await sendAdminVerificationEmail(admin.email, token);
-
 		logger.info(`Resent verification email to admin: ${admin._id}`);
 		return sendResponse(res, 200, true, null, "Verification email sent");
 	} catch (err) {
@@ -111,11 +104,10 @@ export const resendVerificationEmail = async (req, res) => {
 	}
 };
 
-// ======================
-// Forgot Password & Reset
-// ======================
-
-// POST /api/v{version}/admin/forgot-password
+/**
+ * POST /api/v{version}/admin/forgot-password
+ * Sends a password reset email to the admin with a valid email.
+ */
 export const forgotPassword = async (req, res) => {
 	try {
 		const { email } = req.body;
@@ -126,18 +118,16 @@ export const forgotPassword = async (req, res) => {
 
 		const admin = await Admin.findOne({ email });
 		if (!admin) {
-			logger.warn(`Forgot password: Admin not found for email ${email}`);
+			logger.warn(`Admin not found for email ${email}`);
 			return sendResponse(res, 400, false, null, "Admin not found");
 		}
 
-		// Generate reset token (expires in 1 hour)
 		const token = generateToken();
 		admin.forgotPasswordToken = token;
 		admin.forgotPasswordExpires = Date.now() + 60 * 60 * 1000;
 		await admin.save();
 
 		await sendAdminResetPasswordEmail(admin.email, token);
-
 		logger.info(`Password reset email sent for admin: ${admin._id}`);
 		return sendResponse(res, 200, true, null, "Password reset email sent");
 	} catch (err) {
@@ -146,7 +136,10 @@ export const forgotPassword = async (req, res) => {
 	}
 };
 
-// POST /api/v{version}/admin/reset-password
+/**
+ * POST /api/v{version}/admin/reset-password
+ * Resets the admin's password after validating the token and new passwords.
+ */
 export const resetPassword = async (req, res) => {
 	try {
 		const allowedFields = ["token", "newPassword", "confirmPassword"];
@@ -179,9 +172,7 @@ export const resetPassword = async (req, res) => {
 			forgotPasswordExpires: { $gt: Date.now() },
 		});
 		if (!admin) {
-			logger.warn(
-				`Reset password failed: Invalid or expired token (${data.token})`
-			);
+			logger.warn(`Invalid or expired token (${data.token})`);
 			return sendResponse(
 				res,
 				400,
@@ -205,11 +196,10 @@ export const resetPassword = async (req, res) => {
 	}
 };
 
-// ===========================
-// Two-Factor Authentication (OTP)
-// ===========================
-
-// POST /api/v{version}/admin/send-otp
+/**
+ * POST /api/v{version}/admin/send-otp
+ * Generates a two-factor authentication OTP and sends it to the admin’s email.
+ */
 export const sendTwoFactorOTP = async (req, res) => {
 	try {
 		const { email } = req.body;
@@ -220,19 +210,17 @@ export const sendTwoFactorOTP = async (req, res) => {
 
 		const admin = await Admin.findOne({ email });
 		if (!admin) {
-			logger.warn(`Send OTP: Admin not found for email ${email}`);
+			logger.warn(`Admin not found for email ${email}`);
 			return sendResponse(res, 400, false, null, "Admin not found");
 		}
 
-		// Generate a 6-digit OTP that expires in 5 minutes
 		const otp = Math.floor(100000 + Math.random() * 900000).toString();
 		admin.twoFactorOTP = otp;
 		admin.twoFactorOTPExpires = Date.now() + 5 * 60 * 1000;
 		await admin.save();
 
 		await sendAdminTwoFactorOTPEmail(admin.email, otp);
-
-		logger.info(`OTP sent for 2FA to admin: ${admin._id}`);
+		logger.info(`OTP sent for admin: ${admin._id}`);
 		return sendResponse(res, 200, true, null, "OTP sent to email");
 	} catch (err) {
 		logger.error(`Error in sendTwoFactorOTP: ${err.message}`);
@@ -240,7 +228,10 @@ export const sendTwoFactorOTP = async (req, res) => {
 	}
 };
 
-// POST /api/v{version}/admin/verify-otp
+/**
+ * POST /api/v{version}/admin/verify-otp
+ * Verifies the provided OTP and issues a JWT for the admin.
+ */
 export const verifyTwoFactorOTP = async (req, res) => {
 	try {
 		const { email, otp } = req.body;
@@ -260,9 +251,7 @@ export const verifyTwoFactorOTP = async (req, res) => {
 			!admin.twoFactorOTP ||
 			admin.twoFactorOTPExpires < Date.now()
 		) {
-			logger.warn(
-				`Verify OTP failed: OTP invalid or expired for ${email}`
-			);
+			logger.warn(`OTP invalid or expired for ${email}`);
 			return sendResponse(
 				res,
 				400,
@@ -272,23 +261,20 @@ export const verifyTwoFactorOTP = async (req, res) => {
 			);
 		}
 		if (admin.twoFactorOTP !== otp) {
-			logger.warn(
-				`Verify OTP failed: Provided OTP does not match for ${email}`
-			);
+			logger.warn(`Provided OTP does not match for ${email}`);
 			return sendResponse(res, 400, false, null, "OTP does not match");
 		}
-		// Clear OTP after successful verification
+
 		admin.twoFactorOTP = undefined;
 		admin.twoFactorOTPExpires = undefined;
 		await admin.save();
 
-		// NEW: Generate JWT token and set it in cookies
 		const token = generateAdminToken({ id: admin._id, email: admin.email });
 		const cookieOptions = {
 			httpOnly: true,
 			secure: process.env.NODE_ENV === "production",
 			sameSite: "strict",
-			maxAge: 60 * 60 * 1000, // 1 hour
+			maxAge: 60 * 60 * 1000,
 		};
 		res.cookie("admin-token", token, cookieOptions);
 
@@ -306,18 +292,15 @@ export const verifyTwoFactorOTP = async (req, res) => {
 	}
 };
 
-// ------------------------------
-// Get Verification Status
-// ------------------------------
-// GET /api/v{version}/admin/verification-status
+/**
+ * GET /api/v{version}/admin/verification-status
+ * Returns the current email verification status of the authenticated admin.
+ */
 export const getVerificationStatus = async (req, res) => {
 	try {
-		// Assumes req.admin is set by an authentication middleware
 		const admin = await Admin.findById(req.admin.id);
 		if (!admin) {
-			logger.warn(
-				`Admin not found for verification status: ${req.admin.id}`
-			);
+			logger.warn(`Admin not found: ${req.admin.id}`);
 			return sendResponse(res, 404, false, null, "Admin not found");
 		}
 		const status = {
@@ -340,22 +323,20 @@ export const getVerificationStatus = async (req, res) => {
 	}
 };
 
-// Enable two-factor authentication for admin
+/**
+ * PUT /api/v{version}/admin/enable-2fa
+ * Enables two-factor authentication for the authenticated admin.
+ */
 export const enableTwoFactorAuth = async (req, res) => {
 	try {
-		// Assume req.admin is set by your admin authentication middleware
 		const admin = await Admin.findById(req.admin.id);
 		if (!admin) {
-			logger.warn(
-				`Admin not found for enabling two-factor: ${req.admin.id}`
-			);
+			logger.warn(`Admin not found: ${req.admin.id}`);
 			return sendResponse(res, 404, false, null, "Admin not found");
 		}
 		admin.twoFactorEnabled = true;
 		await admin.save();
-		logger.info(
-			`Two-factor authentication enabled for admin: ${admin._id}`
-		);
+		logger.info(`Two-factor enabled for admin: ${admin._id}`);
 		return sendResponse(
 			res,
 			200,
@@ -369,21 +350,20 @@ export const enableTwoFactorAuth = async (req, res) => {
 	}
 };
 
-// Disable two-factor authentication for admin
+/**
+ * PUT /api/v{version}/admin/disable-2fa
+ * Disables two-factor authentication for the authenticated admin.
+ */
 export const disableTwoFactorAuth = async (req, res) => {
 	try {
 		const admin = await Admin.findById(req.admin.id);
 		if (!admin) {
-			logger.warn(
-				`Admin not found for disabling two-factor: ${req.admin.id}`
-			);
+			logger.warn(`Admin not found: ${req.admin.id}`);
 			return sendResponse(res, 404, false, null, "Admin not found");
 		}
 		admin.twoFactorEnabled = false;
 		await admin.save();
-		logger.info(
-			`Two-factor authentication disabled for admin: ${admin._id}`
-		);
+		logger.info(`Two-factor disabled for admin: ${admin._id}`);
 		return sendResponse(
 			res,
 			200,
@@ -397,13 +377,13 @@ export const disableTwoFactorAuth = async (req, res) => {
 	}
 };
 
-// ---------- New OIDC Endpoints ----------
+/**
+ * GET /api/v{version}/oidc/admin/authorize?client_id=...&redirect_uri=...&response_type=code&state=...
+ * Handles OIDC authorization for an admin, generates an auth code, and redirects to the client.
+ */
 
-// OIDC Authorization Endpoint for Admins
-// GET /api/v{version}/oidc/admin/authorize?client_id=...&redirect_uri=...&response_type=code&state=...
 export const oidcAuthorizeAdmin = async (req, res) => {
 	try {
-		// Extract OIDC parameters from the query string
 		const { client_id, redirect_uri, response_type, state } = req.query;
 		if (!client_id || !redirect_uri || response_type !== "code") {
 			return sendResponse(
@@ -414,18 +394,23 @@ export const oidcAuthorizeAdmin = async (req, res) => {
 				"Missing or invalid OIDC parameters"
 			);
 		}
-		// (Optional) Lookup and validate client_id against a Clients collection here
+		const client = await Client.findOne({ client_id, active: true });
+		if (!client) {
+			return sendResponse(
+				res,
+				400,
+				false,
+				null,
+				"Client not registered or inactive"
+			);
+		}
+		if (!client.redirect_uris.includes(redirect_uri)) {
+			return sendResponse(res, 400, false, null, "Invalid redirect URI");
+		}
 		logger.info(
-			`OIDC authorize request from client: ${client_id} for admin: ${req.admin.id}`
+			`OIDC authorization request by admin: ${req.admin.id} for client: ${client_id}`
 		);
-
-		// Generate an authorization code (in production, store this along with client_id and admin ID with expiry)
 		const authCode = generateToken();
-		logger.info(
-			`Generated OIDC authorization code: ${authCode} for admin: ${req.admin.id} and client: ${client_id}`
-		);
-
-		// Redirect to the client's redirect_uri with the code and state
 		const redirectUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
 		return res.redirect(redirectUrl);
 	} catch (err) {
@@ -434,11 +419,12 @@ export const oidcAuthorizeAdmin = async (req, res) => {
 	}
 };
 
-// OIDC Token Endpoint for Admins
-// POST /api/v{version}/oidc/admin/token
+/**
+ * POST /api/v{version}/oidc/admin/token
+ * Exchanges an authorization code for an access token in the OIDC flow.
+ */
 export const oidcTokenAdmin = async (req, res) => {
 	try {
-		// Expect parameters: code, client_id, client_secret, redirect_uri, grant_type
 		const { code, client_id, client_secret, redirect_uri, grant_type } =
 			req.body;
 		if (
@@ -456,24 +442,16 @@ export const oidcTokenAdmin = async (req, res) => {
 				"Missing or invalid token request parameters"
 			);
 		}
-		// (Optional) Validate the authorization code against your temporary store here.
-		// Also validate client_id and client_secret against your Clients store.
-		logger.info(
-			`OIDC token request from client: ${client_id} for admin with code: ${code}`
-		);
-
-		// Retrieve admin details from the stored authorization code record (for demo, we assume req.admin is available)
+		// (Optionally, verify that the provided code matches a stored code for the client.)
 		const adminId = req.admin ? req.admin.id : "dummyId";
 		const adminEmail = req.admin
 			? req.admin.email
 			: "dummy@dayadevraha.com";
-		// Include the client_id as a claim (audience) in the token
-		const token = generateAdminToken({
-			id: adminId,
-			email: adminEmail,
-			aud: client_id,
-		});
-
+		const token = jwt.sign(
+			{ id: adminId, email: adminEmail, aud: client_id },
+			process.env.ADMIN_JWT_SECRET,
+			{ expiresIn: "1h" }
+		);
 		return res.json({
 			access_token: token,
 			token_type: "Bearer",
@@ -485,11 +463,12 @@ export const oidcTokenAdmin = async (req, res) => {
 	}
 };
 
-// OIDC UserInfo Endpoint for Admins
-// GET /api/v{version}/oidc/admin/userinfo
+/**
+ * GET /api/v{version}/oidc/admin/userinfo
+ * Returns the admin's user information based on a validated OIDC access token.
+ */
 export const oidcAdminUserInfo = async (req, res) => {
 	try {
-		// Assume adminProtect middleware has validated the access token and set req.admin
 		if (!req.admin) {
 			return res.status(401).json({ error: "Invalid token" });
 		}
@@ -498,7 +477,6 @@ export const oidcAdminUserInfo = async (req, res) => {
 			email: req.admin.email,
 			name: req.admin.name,
 			role: req.admin.role,
-			// Include additional custom claims as needed
 		});
 	} catch (err) {
 		logger.error(`Error in oidcAdminUserInfo: ${err.message}`);

@@ -14,24 +14,33 @@ import { userProtect } from "../middlewares/authMiddleware.js";
 export default function userRoutes(version) {
 	const router = Router();
 
-	// Authentication endpoints
-	router.post(`/api/v${version}/auth/register`, registerUser);
-	router.post(`/api/v${version}/auth/login`, loginLimiter, loginUser);
-	router.get(`/api/v${version}/auth/validate-token`, validateUserToken);
-	router.post(`/api/v${version}/auth/logout`, logoutUser);
+	// Registers a new user
+	// POST /api/v{version}/auth/register
+	router.post(`/api/v${version}/user/register`, registerUser);
 
-	// CRUD endpoints for user profile
-	router.get(`/api/v${version}/auth/profile`, userProtect, getUserProfile);
-	router.put(
-		`/api/v${version}/auth/update-profile`,
-		userProtect,
-		updateUserProfile
-	);
-	router.delete(
-		`/api/v${version}/auth/delete-account`,
-		userProtect,
-		deleteUserAccount
-	);
+	// Logs in a user with rate limiting applied
+	// POST /api/v{version}/user/login
+	router.post(`/api/v${version}/user/login`, loginLimiter, loginUser);
+
+	// Validates the user's token to ensure authentication validity
+	// GET /api/v{version}/user/validate-token
+	router.get(`/api/v${version}/user/validate-token`, validateUserToken);
+
+	// Logs out the currently authenticated user
+	// POST /api/v{version}/user/logout
+	router.post(`/api/v${version}/user/logout`, logoutUser);
+
+	// Retrieves the profile for the authenticated user
+	// GET /api/v{version}/user/profile
+	router.get(`/api/v${version}/user/profile`, userProtect, getUserProfile);
+
+	// Updates the profile of the currently authenticated user
+	// PUT /api/v{version}/user/update-profile
+	router.put(`/api/v${version}/user/update-profile`, userProtect, updateUserProfile);
+
+	// Deletes the account of the authenticated user
+	// DELETE /api/v${version}/user/delete-account
+	router.delete(`/api/v${version}/user/delete-account`, userProtect, deleteUserAccount);
 
 	return router;
 }

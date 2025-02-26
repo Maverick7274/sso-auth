@@ -3,7 +3,7 @@
 import bcrypt from "bcryptjs";
 import _ from "lodash";
 import { z } from "zod";
-import crypto from "crypto"; // NEW: to generate a verification token
+import crypto from "crypto";
 import User from "../models/User.js";
 import Session from "../models/Session.js";
 import {
@@ -14,15 +14,10 @@ import { sendResponse, formatError } from "../utils/helpers.js";
 import {
 	sendUserVerificationEmail,
 	sendUserTwoFactorOTPEmail,
-} from "../services/emailService.js"; // NEW: to send email
-
-// Use only one logger (Winston)
+} from "../services/emailService.js";
 import logger from "../utils/logger.js";
 
-// -----------------------------------------------------
-// Zod Schemas for User Registration and Login
-// -----------------------------------------------------
-
+// Schema for registering a new user (Route: POST /api/users/register)
 const userRegisterSchema = z.object({
 	name: z.string().min(1, { message: "Name is required" }),
 	email: z.string().email({ message: "Invalid email format" }),
@@ -36,15 +31,13 @@ const userRegisterSchema = z.object({
 	emergencyRecoveryContact: z.string().optional(),
 });
 
+// Schema for user login (Route: POST /api/users/login)
 const userLoginSchema = z.object({
 	email: z.string().email({ message: "Invalid email format" }),
 	password: z.string().min(1, { message: "Password is required" }),
 });
 
-// -----------------------------------------------------
-// Helper: Extract Session Data
-// -----------------------------------------------------
-
+// Helper function to extract session details from the request
 const getSessionData = (req, token) => ({
 	ipAddress:
 		req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unknown",
@@ -53,11 +46,17 @@ const getSessionData = (req, token) => ({
 	token,
 });
 
-// -----------------------------------------------------
-// Controller Functions for Users
-// -----------------------------------------------------
-
-// Register new user
+/**
+ * Register a new user.
+ * Route: POST /api/users/register
+ * - Validates user input.
+ * - Creates a new user, hashes the password.
+ * - Generates an email verification token and sends a verification email.
+ * - Creates a session record and sets a user token cookie.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const registerUser = async (req, res) => {
 	try {
 		const allowedFields = [
@@ -70,10 +69,10 @@ export const registerUser = async (req, res) => {
 		];
 		const data = _.pick(req.body, allowedFields);
 
-		// Validate input with Zod
+		// Validate input data
 		const parsedData = userRegisterSchema.parse(data);
 
-		// Check if passwords match
+		// Ensure passwords match
 		if (parsedData.password !== parsedData.confirmPassword) {
 			logger.warn("Registration failed: Passwords do not match.");
 			return sendResponse(
@@ -86,31 +85,30 @@ export const registerUser = async (req, res) => {
 		}
 		delete parsedData.confirmPassword;
 
-		// Check if user already exists
+		// Check for existing user by email
 		let user = await User.findOne({ email: parsedData.email });
 		if (user) {
 			logger.warn(
-				`User registration failed: ${parsedData.email} already exists.`
+				`Registration failed: ${parsedData.email} already exists.`
 			);
 			return sendResponse(res, 400, false, null, "User already exists");
 		}
 
-		// Hash password
+		// Hash the password before saving
 		const salt = await bcrypt.genSalt(10);
 		parsedData.password = await bcrypt.hash(parsedData.password, salt);
 
-		// Create user
+		// Create and save the user record
 		user = await User.create(parsedData);
 
-		// --- NEW: Generate verification token, update user, and send verification email ---
+		// Generate email verification token and set expiration (24 hours)
 		const verificationToken = crypto.randomBytes(20).toString("hex");
 		user.emailVerificationToken = verificationToken;
-		user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours expiry
+		user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
 		await user.save();
 		await sendUserVerificationEmail(user.email, verificationToken);
-		// -----------------------------------------------------------------------------
 
-		// Generate JWT token for login
+		// Generate JWT token for immediate login
 		const token = generateUserToken({
 			id: user._id,
 			email: user.email,
@@ -123,7 +121,7 @@ export const registerUser = async (req, res) => {
 		};
 		res.cookie("user-token", token, cookieOptions);
 
-		// Create session record
+		// Log session details for user
 		await Session.create({
 			user: user._id,
 			userModel: "User",
@@ -147,7 +145,7 @@ export const registerUser = async (req, res) => {
 		);
 	} catch (err) {
 		if (err instanceof z.ZodError) {
-			logger.error("Validation error during user registration.");
+			logger.error("Validation error during registration.");
 			return res
 				.status(400)
 				.json({ success: false, errors: formatError(err.errors) });
@@ -157,7 +155,15 @@ export const registerUser = async (req, res) => {
 	}
 };
 
-// Login user
+/**
+ * Log in a user.
+ * Route: POST /api/users/login
+ * - Validates credentials.
+ * - Issues a 2FA OTP if enabled or generates a token and creates a session.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const loginUser = async (req, res) => {
 	try {
 		const credentials = _.pick(req.body, ["email", "password"]);
@@ -178,11 +184,11 @@ export const loginUser = async (req, res) => {
 			return sendResponse(res, 401, false, null, "Invalid credentials");
 		}
 
-		// If user has enabled two-factor auth, send an OTP and stop login here.
+		// If two-factor auth is enabled, send an OTP and halt further login processing
 		if (user.twoFactorEnabled) {
 			const otp = Math.floor(100000 + Math.random() * 900000).toString();
 			user.twoFactorOTP = otp;
-			user.twoFactorOTPExpires = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
+			user.twoFactorOTPExpires = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
 			await user.save();
 			await sendUserTwoFactorOTPEmail(user.email, otp);
 			logger.info(`2FA OTP sent for user: ${user._id}`);
@@ -195,7 +201,7 @@ export const loginUser = async (req, res) => {
 			);
 		}
 
-		// If 2FA is not enabled, proceed as usual
+		// Generate JWT token for login and set cookie
 		const token = generateUserToken({ id: user._id, email: user.email });
 		const cookieOptions = {
 			httpOnly: true,
@@ -205,6 +211,7 @@ export const loginUser = async (req, res) => {
 		};
 		res.cookie("user-token", token, cookieOptions);
 
+		// Record session information
 		await Session.create({
 			user: user._id,
 			userModel: "User",
@@ -227,7 +234,7 @@ export const loginUser = async (req, res) => {
 		);
 	} catch (err) {
 		if (err instanceof z.ZodError) {
-			logger.error("Validation error during user login.");
+			logger.error("Validation error during login.");
 			return res
 				.status(400)
 				.json({ success: false, errors: formatError(err.errors) });
@@ -237,7 +244,15 @@ export const loginUser = async (req, res) => {
 	}
 };
 
-// Validate user token
+/**
+ * Validate a user's token.
+ * Route: GET /api/users/validate-token
+ * - Checks for the token in cookies or Authorization header.
+ * - Verifies and returns a response.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const validateUserToken = async (req, res) => {
 	try {
 		let token;
@@ -250,12 +265,12 @@ export const validateUserToken = async (req, res) => {
 			token = req.headers.authorization.split(" ")[1];
 		}
 		if (!token) {
-			logger.warn("No token provided for user validation.");
+			logger.warn("No token provided for validation.");
 			return sendResponse(res, 401, false, null, "No token provided");
 		}
 		const decoded = verifyUserToken(token);
 		if (!decoded) {
-			logger.warn("Invalid token provided for user.");
+			logger.warn("Invalid token provided.");
 			return sendResponse(res, 401, false, null, "Invalid token");
 		}
 		logger.info("User token validated successfully");
@@ -267,7 +282,14 @@ export const validateUserToken = async (req, res) => {
 	}
 };
 
-// Logout user
+/**
+ * Log out the current user.
+ * Route: POST /api/users/logout
+ * - Clears the user token cookie.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const logoutUser = async (req, res) => {
 	try {
 		res.clearCookie("user-token");
@@ -281,12 +303,21 @@ export const logoutUser = async (req, res) => {
 	}
 };
 
-// Retrieve user profile (requires verified email)
+/**
+ * Retrieve the user's profile.
+ * Route: GET /api/users/profile
+ * - Returns user information only if the email has been verified.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const getUserProfile = async (req, res) => {
 	try {
 		const user = await User.findById(req.user.id).select("-password");
 		if (!user) {
-			logger.warn(`User not found for profile retrieval: ${req.user.id}`);
+			logger.warn(
+				`Profile retrieval failed. User not found: ${req.user.id}`
+			);
 			return sendResponse(res, 404, false, null, "User not found");
 		}
 		if (!user.isVerified) {
@@ -306,12 +337,20 @@ export const getUserProfile = async (req, res) => {
 	}
 };
 
-// Update user profile (requires verified email)
+/**
+ * Update the user's profile.
+ * Route: PUT /api/users/profile
+ * - Allows updating of user data if email verified.
+ * - Re-hashes password if it is updated.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const updateUserProfile = async (req, res) => {
 	try {
 		const existingUser = await User.findById(req.user.id);
 		if (!existingUser) {
-			logger.warn(`User not found for update: ${req.user.id}`);
+			logger.warn(`Update failed. User not found: ${req.user.id}`);
 			return sendResponse(res, 404, false, null, "User not found");
 		}
 		if (!existingUser.isVerified) {
@@ -333,6 +372,7 @@ export const updateUserProfile = async (req, res) => {
 		];
 		const updateData = _.pick(req.body, allowedFields);
 
+		// Hash new password if provided
 		if (updateData.password) {
 			const salt = await bcrypt.genSalt(10);
 			updateData.password = await bcrypt.hash(updateData.password, salt);
@@ -342,7 +382,7 @@ export const updateUserProfile = async (req, res) => {
 			new: true,
 		});
 		if (!user) {
-			logger.warn(`User not found for update: ${req.user.id}`);
+			logger.warn(`Update failed. User not found: ${req.user.id}`);
 			return sendResponse(res, 404, false, null, "User not found");
 		}
 		logger.info(`User profile updated: ${req.user.id}`);
@@ -365,12 +405,19 @@ export const updateUserProfile = async (req, res) => {
 	}
 };
 
-// Delete user account (requires verified email)
+/**
+ * Delete the user's account.
+ * Route: DELETE /api/users/account
+ * - Deletes the account only if the user's email is verified.
+ *
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 export const deleteUserAccount = async (req, res) => {
 	try {
 		const existingUser = await User.findById(req.user.id);
 		if (!existingUser) {
-			logger.warn(`User not found for deletion: ${req.user.id}`);
+			logger.warn(`Deletion failed. User not found: ${req.user.id}`);
 			return sendResponse(res, 404, false, null, "User not found");
 		}
 		if (!existingUser.isVerified) {
