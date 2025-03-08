@@ -9,111 +9,23 @@ const adminSchema = new mongoose.Schema(
 			type: String,
 			required: [true, "Name is required"],
 		},
-		// Unique email address used for admin login
+		// Unique email address used for admin login; must end with @dayadevraha.com
 		email: {
 			type: String,
 			required: [true, "Email is required"],
 			unique: true,
 			lowercase: true,
 			trim: true,
+			// You could also add a regex validation here if needed.
 		},
-		// Admin's password (expected to be hashed)
+		// Admin's hashed password
 		password: {
 			type: String,
 			required: [true, "Password is required"],
 		},
-		// Key provided during registration to validate admin eligibility
-		adminKey: {
-			type: String,
-		},
-		// Admin role: "Admin", "Super Admin", or "Moderator"
-		role: {
-			type: String,
-			enum: ["Admin", "Super Admin", "Moderator"],
-			required: true,
-		},
-		// Array of permissions assigned to the admin
-		permissions: {
-			type: [String],
-			default: [],
-		},
-		// Numeric access level between 1 (minimum) and 5 (maximum)
-		accessLevel: {
-			type: Number,
-			min: 1,
-			max: 5,
-			default: 5,
-		},
-		// Identifier (ID or email) of the admin who created this account
-		adminCreatedBy: {
-			type: String,
-		},
-		// Timestamp when the admin account was created
-		adminCreatedOn: {
-			type: Date,
-			default: Date.now,
-		},
-		// Timestamp for the last time the admin was active
-		lastActive: {
-			type: Date,
-		},
-		// Admin's date of birth
+		// Admin's date of birth (optional)
 		dateOfBirth: {
 			type: Date,
-		},
-		// Permission flags for various admin capabilities
-		canManageUsers: {
-			type: Boolean,
-			default: false,
-		},
-		canManageContent: {
-			type: Boolean,
-			default: false,
-		},
-		canManagePayments: {
-			type: Boolean,
-			default: false,
-		},
-		canViewReports: {
-			type: Boolean,
-			default: false,
-		},
-		canApproveNewAdmins: {
-			type: Boolean,
-			default: false,
-		},
-		canSuspendUsers: {
-			type: Boolean,
-			default: false,
-		},
-		canDeleteData: {
-			type: Boolean,
-			default: false,
-		},
-		canExportData: {
-			type: Boolean,
-			default: false,
-		},
-		// Super admin key for verifying higher-level privileges
-		superAdminKey: {
-			type: String,
-		},
-		// Additional permission flags for managing other admins or security settings
-		canPromoteDemoteAdmins: {
-			type: Boolean,
-			default: false,
-		},
-		canModifyAdminPermissions: {
-			type: Boolean,
-			default: false,
-		},
-		canOverrideSecuritySettings: {
-			type: Boolean,
-			default: false,
-		},
-		// Emergency contact for account recovery purposes
-		emergencyRecoveryContact: {
-			type: String,
 		},
 		// Email verification properties
 		isVerified: {

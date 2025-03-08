@@ -11,9 +11,6 @@ import {
 	getVerificationStatus,
 	enableTwoFactorAuth,
 	disableTwoFactorAuth,
-	oidcAuthorizeUser,
-	oidcTokenUser,
-	oidcUserUserInfo,
 } from "../controllers/userExtraController.js";
 import { userProtect } from "../middlewares/authMiddleware.js";
 
@@ -74,27 +71,6 @@ export default function userExtraRoutes(version) {
 		`/api/v${version}/user/disable-two-factor`,
 		userProtect,
 		disableTwoFactorAuth
-	);
-
-	// OpenID Connect (OIDC) Routes for Users (Protected)
-	// GET: /api/v{version}/oidc/user/authorize
-	// Authorizes the user for OIDC.
-	router.get(
-		`/api/v${version}/oidc/user/authorize`,
-		userProtect,
-		oidcAuthorizeUser
-	);
-
-	// POST: /api/v{version}/oidc/user/token
-	// Issues an OIDC token after successful user authentication.
-	router.post(`/api/v${version}/oidc/user/token`, userProtect, oidcTokenUser);
-
-	// GET: /api/v{version}/oidc/user/userinfo
-	// Retrieves user information based on the provided OIDC token.
-	router.get(
-		`/api/v${version}/oidc/user/userinfo`,
-		userProtect,
-		oidcUserUserInfo
 	);
 
 	return router;

@@ -11,9 +11,6 @@ import {
 	getVerificationStatus,
 	enableTwoFactorAuth,
 	disableTwoFactorAuth,
-	oidcAuthorizeAdmin,
-	oidcTokenAdmin,
-	oidcAdminUserInfo,
 } from "../controllers/adminExtraController.js";
 import { adminProtect } from "../middlewares/authMiddleware.js";
 
@@ -26,11 +23,18 @@ export default function adminExtraRoutes(version) {
 
 	// POST /api/v{version}/admin/resend-verification
 	// Resends the email verification link to the admin.
-	router.post(`/api/v${version}/admin/resend-verification`, resendVerificationEmail);
+	router.post(
+		`/api/v${version}/admin/resend-verification`,
+		resendVerificationEmail
+	);
 
 	// GET /api/v{version}/admin/verification-status
 	// Retrieves the current email verification status for the authenticated admin.
-	router.get(`/api/v${version}/admin/verification-status`, adminProtect, getVerificationStatus);
+	router.get(
+		`/api/v${version}/admin/verification-status`,
+		adminProtect,
+		getVerificationStatus
+	);
 
 	// POST /api/v{version}/admin/forgot-password
 	// Initiates the password reset process by sending a reset link to the admin.
@@ -50,23 +54,19 @@ export default function adminExtraRoutes(version) {
 
 	// POST /api/v{version}/admin/enable-two-factor
 	// Enables two-factor authentication for the authenticated admin.
-	router.post(`/api/v${version}/admin/enable-two-factor`, adminProtect, enableTwoFactorAuth);
+	router.post(
+		`/api/v${version}/admin/enable-two-factor`,
+		adminProtect,
+		enableTwoFactorAuth
+	);
 
 	// POST /api/v{version}/admin/disable-two-factor
 	// Disables two-factor authentication for the authenticated admin.
-	router.post(`/api/v${version}/admin/disable-two-factor`, adminProtect, disableTwoFactorAuth);
-
-	// GET /api/v{version}/oidc/admin/authorize
-	// Initiates the OIDC authorization flow for the authenticated admin.
-	router.get(`/api/v${version}/oidc/admin/authorize`, adminProtect, oidcAuthorizeAdmin);
-
-	// POST /api/v{version}/oidc/admin/token
-	// Exchanges the authorization code for an access token in the OIDC flow.
-	router.post(`/api/v${version}/oidc/admin/token`, adminProtect, oidcTokenAdmin);
-
-	// GET /api/v{version}/oidc/admin/userinfo
-	// Retrieves user information for the authenticated admin from the OIDC provider.
-	router.get(`/api/v${version}/oidc/admin/userinfo`, adminProtect, oidcAdminUserInfo);
+	router.post(
+		`/api/v${version}/admin/disable-two-factor`,
+		adminProtect,
+		disableTwoFactorAuth
+	);
 
 	return router;
 }

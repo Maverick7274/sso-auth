@@ -9,13 +9,13 @@ dotenv.config();
 
 // Create a nodemailer transporter using environment SMTP configuration
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST, // SMTP server host, e.g., "smtp.gmail.com"
-  port: Number(process.env.SMTP_PORT), // SMTP port, e.g., 587 for TLS or 465 for SSL
-  secure: false, // Use TLS (false for port 587, true for port 465)
-  auth: {
-    user: process.env.SMTP_USER, // SMTP username
-    pass: process.env.SMTP_PASS, // SMTP password
-  },
+	host: process.env.SMTP_HOST, // SMTP server host, e.g., "smtp.gmail.com"
+	port: Number(process.env.SMTP_PORT), // SMTP port, e.g., 587 for TLS or 465 for SSL
+	secure: false, // Use TLS (false for port 587, true for port 465)
+	auth: {
+		user: process.env.SMTP_USER, // SMTP username
+		pass: process.env.SMTP_PASS, // SMTP password
+	},
 });
 
 /**
@@ -26,13 +26,13 @@ const transporter = nodemailer.createTransport({
  * @returns {Promise} - Resolves when the email is sent.
  */
 export const sendUserVerificationEmail = async (to, token) => {
-  const verificationLink = `http://localhost:3000/verify-email?token=${token}`;
-  const mailOptions = {
-    from: `"No Reply" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Verify Your Email Address - Dayadevraha",
-    text: `Please verify your email by clicking the following link: ${verificationLink}`,
-    html: `<html>
+	const verificationLink = `http://localhost:3000/en/verify-email?token=${token}`;
+	const mailOptions = {
+		from: `"No Reply" <${process.env.SMTP_USER}>`,
+		to,
+		subject: "Verify Your Email Address - Dayadevraha",
+		text: `Please verify your email by clicking the following link: ${verificationLink}`,
+		html: `<html>
   <head>
   <style type="text/css">
     .email-container { width: 100%; background: #f5f5f5; padding: 20px; font-family: Arial, sans-serif; }
@@ -63,8 +63,8 @@ export const sendUserVerificationEmail = async (to, token) => {
   </div>
   </body>
 </html>`,
-  };
-  return transporter.sendMail(mailOptions);
+	};
+	return transporter.sendMail(mailOptions);
 };
 
 /**
@@ -75,13 +75,13 @@ export const sendUserVerificationEmail = async (to, token) => {
  * @returns {Promise} - Resolves when the email is sent.
  */
 export const sendAdminVerificationEmail = async (to, token) => {
-  const verificationLink = `http://localhost:3000/admin/verify-email?token=${token}`;
-  const mailOptions = {
-    from: `"No Reply" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Verify Your Admin Email Address - Dayadevraha",
-    text: `Please verify your admin email by clicking the following link: ${verificationLink}`,
-    html: `<html>
+	const verificationLink = `http://localhost:3000/en/admin/verify-email?token=${token}`;
+	const mailOptions = {
+		from: `"No Reply" <${process.env.SMTP_USER}>`,
+		to,
+		subject: "Verify Your Admin Email Address - Dayadevraha",
+		text: `Please verify your admin email by clicking the following link: ${verificationLink}`,
+		html: `<html>
   <head>
   <style type="text/css">
     .email-container { width: 100%; background: #f5f5f5; padding: 20px; font-family: Arial, sans-serif; }
@@ -112,8 +112,8 @@ export const sendAdminVerificationEmail = async (to, token) => {
   </div>
   </body>
 </html>`,
-  };
-  return transporter.sendMail(mailOptions);
+	};
+	return transporter.sendMail(mailOptions);
 };
 
 /**
@@ -124,13 +124,13 @@ export const sendAdminVerificationEmail = async (to, token) => {
  * @returns {Promise} - Resolves when the email is sent.
  */
 export const sendUserResetPasswordEmail = async (to, token) => {
-  const resetLink = `http://dayadevraha.com/api/v${process.env.API_VERSION}/user/reset-password?token=${token}`;
-  const mailOptions = {
-    from: `"No Reply" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Reset Your Password - Dayadevraha",
-    text: `You requested a password reset. Click the following link to reset your password: ${resetLink}`,
-    html: `<html>
+	const resetLink = `http://localhost:3000/en/forgot-password/reset-password?token=${token}`;
+	const mailOptions = {
+		from: `"No Reply" <${process.env.SMTP_USER}>`,
+		to,
+		subject: "Reset Your Password - Dayadevraha",
+		text: `You requested a password reset. Click the following link to reset your password: ${resetLink}`,
+		html: `<html>
   <head>
   <style type="text/css">
     .email-container { width: 100%; background: #f5f5f5; padding: 20px; font-family: Arial, sans-serif; }
@@ -161,8 +161,8 @@ export const sendUserResetPasswordEmail = async (to, token) => {
   </div>
   </body>
 </html>`,
-  };
-  return transporter.sendMail(mailOptions);
+	};
+	return transporter.sendMail(mailOptions);
 };
 
 /**
@@ -173,13 +173,13 @@ export const sendUserResetPasswordEmail = async (to, token) => {
  * @returns {Promise} - Resolves when the email is sent.
  */
 export const sendAdminResetPasswordEmail = async (to, token) => {
-  const resetLink = `http://dayadevraha.com/api/v${process.env.API_VERSION}/admin/reset-password?token=${token}`;
-  const mailOptions = {
-    from: `"No Reply" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Reset Your Admin Password - Dayadevraha",
-    text: `You requested a password reset for your Dayadevraha admin account. Click the following link to reset your password: ${resetLink}`,
-    html: `<html>
+	const resetLink = `http://localhost:3000/en/admin/forgot-password/reset-password?token=${token}`;
+	const mailOptions = {
+		from: `"No Reply" <${process.env.SMTP_USER}>`,
+		to,
+		subject: "Reset Your Admin Password - Dayadevraha",
+		text: `You requested a password reset for your Dayadevraha admin account. Click the following link to reset your password: ${resetLink}`,
+		html: `<html>
   <head>
   <style type="text/css">
     .email-container { width: 100%; background: #f5f5f5; padding: 20px; font-family: Arial, sans-serif; }
@@ -210,8 +210,8 @@ export const sendAdminResetPasswordEmail = async (to, token) => {
   </div>
   </body>
 </html>`,
-  };
-  return transporter.sendMail(mailOptions);
+	};
+	return transporter.sendMail(mailOptions);
 };
 
 /**
@@ -222,12 +222,12 @@ export const sendAdminResetPasswordEmail = async (to, token) => {
  * @returns {Promise} - Resolves when the email is sent.
  */
 export const sendUserTwoFactorOTPEmail = async (to, otp) => {
-  const mailOptions = {
-    from: `"No Reply" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Your Two-Factor Authentication Code - Dayadevraha",
-    text: `Your OTP code is: ${otp}`,
-    html: `<html>
+	const mailOptions = {
+		from: `"No Reply" <${process.env.SMTP_USER}>`,
+		to,
+		subject: "Your Two-Factor Authentication Code - Dayadevraha",
+		text: `Your OTP code is: ${otp}`,
+		html: `<html>
   <head>
   <style type="text/css">
     .email-container { width: 100%; background: #f5f5f5; padding: 20px; font-family: Arial, sans-serif; }
@@ -257,8 +257,8 @@ export const sendUserTwoFactorOTPEmail = async (to, otp) => {
   </div>
   </body>
 </html>`,
-  };
-  return transporter.sendMail(mailOptions);
+	};
+	return transporter.sendMail(mailOptions);
 };
 
 /**
@@ -269,12 +269,12 @@ export const sendUserTwoFactorOTPEmail = async (to, otp) => {
  * @returns {Promise} - Resolves when the email is sent.
  */
 export const sendAdminTwoFactorOTPEmail = async (to, otp) => {
-  const mailOptions = {
-    from: `"No Reply" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Your Admin Two-Factor Authentication Code - Dayadevraha",
-    text: `Your OTP code is: ${otp}`,
-    html: `<html>
+	const mailOptions = {
+		from: `"No Reply" <${process.env.SMTP_USER}>`,
+		to,
+		subject: "Your Admin Two-Factor Authentication Code - Dayadevraha",
+		text: `Your OTP code is: ${otp}`,
+		html: `<html>
   <head>
   <style type="text/css">
     .email-container { width: 100%; background: #f5f5f5; padding: 20px; font-family: Arial, sans-serif; }
@@ -304,6 +304,6 @@ export const sendAdminTwoFactorOTPEmail = async (to, otp) => {
   </div>
   </body>
 </html>`,
-  };
-  return transporter.sendMail(mailOptions);
+	};
+	return transporter.sendMail(mailOptions);
 };
